@@ -39,5 +39,5 @@ function pck(pred, gt, bboxDiagPixels, alpha = 0.1) {
 }
 
 export { computeLetterbox, mapFromLetterbox, normalizeUint8ToFloat32, pck };
-//# sourceMappingURL=index.js.map
-//# sourceMappingURL=index.js.map
+//# sourceMappingURL=index.mjs.map
+//# sourceMappingURL=index.mjs.map

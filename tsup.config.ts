@@ -9,4 +9,5 @@ export default defineConfig({
   target: "es2019",
   treeshake: true,
   minify: false,
+  outExtension: ({ format }) => ({ js: format === "cjs" ? ".cjs" : ".mjs" }),
 });

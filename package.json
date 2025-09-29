@@ -24,6 +24,8 @@
     "build": "tsup",
     "clean": "rimraf dist",
     "dev": "tsup --watch --dts",
+    "prepare": "npm run build",
+    "prepack": "npm run clean && npm run build",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "devDependencies": {
