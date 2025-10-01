@@ -1,5 +1,5 @@
 {
-  "name": "@royng163/fitness-coach-core",
+  "name": "@royng163/reptor-core",
   "version": "0.1.0",
   "description": "Platform-agnostic TS core for pose preprocessing, features, and metrics",
   "license": "MIT",
