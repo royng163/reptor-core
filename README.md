@@ -1,17 +1,11 @@
 # @royng163/reptor-core
 
-Platform-agnostic TypeScript for pose pipelines: types, preprocessing, metrics, and (later) features and rep/phase logic.
+Platform-agnostic TypeScript for pose pipelines: types, preprocessing, and features logic.
 
 Install (from GitHub during development)
 
 ```bash
-# Option A: direct GitHub dep (commit/branch/tag)
 npm i github:royng163/reptor-core#main
-
-# Option B: local tarball for quick iteration
-npm pack  # in the fitness-core repo -> produces .tgz
-# In your app repo:
-npm i ../path/to/reptor-core-0.1.0.tgz
 ```
 
 Usage

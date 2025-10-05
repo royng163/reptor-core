@@ -1,5 +1,3 @@
-export type Platform = "web" | "ios" | "android";
-
 export interface Keypoint {
   x: number; // in source pixel space
   y: number;
@@ -11,11 +9,5 @@ export interface Keypoint {
 export interface PoseResult {
   keypoints: Keypoint[];
   keypoints3D?: Keypoint[];
-  timestamp?: number;
-}
-
-export interface FrameInfo {
-  width: number;
-  height: number;
   timestamp?: number;
 }

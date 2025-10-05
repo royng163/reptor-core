@@ -1,7 +1,7 @@
 {
   "name": "@royng163/reptor-core",
-  "version": "0.2.0",
-  "description": "Platform-agnostic TS core for pose preprocessing, features, and metrics",
+  "version": "0.3.0",
+  "description": "Platform-agnostic TS core for pose preprocessing and features",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
