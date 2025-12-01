@@ -1,7 +1,7 @@
 {
   "name": "@royng163/reptor-core",
-  "version": "0.3.0",
-  "description": "Platform-agnostic TS core for pose preprocessing and features",
+  "version": "0.4.0",
+  "description": "Reptor Core Library - Analysis engine for exercise form feedback",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
