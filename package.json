@@ -1,6 +1,6 @@
 {
   "name": "@royng163/reptor-core",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Reptor Core Library - Analysis engine for exercise form feedback",
   "license": "MIT",
   "type": "module",

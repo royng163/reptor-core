@@ -10,6 +10,24 @@ interface PoseResult {
     keypoints3D?: Keypoint[];
     timestamp?: number;
 }
+interface FrameKeypoints {
+    hip_left: {
+        x: number;
+        y: number;
+    };
+    hip_right: {
+        x: number;
+        y: number;
+    };
+    ankle_left: {
+        x: number;
+        y: number;
+    };
+    ankle_right: {
+        x: number;
+        y: number;
+    };
+}
 type RuleType = "range" | "symmetry" | "stability";
 type ViewType = "front" | "side";
 type ComparatorType = "min" | "max" | "mean" | "std";
@@ -102,37 +120,9 @@ declare function calculateAngle(a: Keypoint | undefined, b: Keypoint | undefined
  */
 declare function calculateAngle3D(a: Keypoint | undefined, b: Keypoint | undefined, c: Keypoint | undefined): number;
 /**
- * Calculates the angle between a line (A-B) and the vertical axis.
- * 0° = vertical (pointing up), 90° = horizontal.
- * Returns NaN if any keypoint is invalid.
- */
-declare function angleToVertical(a: Keypoint | undefined, b: Keypoint | undefined): number;
-/**
- * Calculates the angle between a line (A-B) and the horizontal axis.
- * 0° = horizontal, 90° = vertical.
- * Returns NaN if any keypoint is invalid.
- */
-declare function angleToHorizontal(a: Keypoint | undefined, b: Keypoint | undefined): number;
-/**
- * Calculates the Euclidean distance between two keypoints (2D).
- */
-declare function distance2D(a: Keypoint, b: Keypoint): number;
-/**
- * Calculates the Euclidean distance between two keypoints (3D).
- */
-declare function distance3D(a: Keypoint, b: Keypoint): number;
-/**
  * Returns the midpoint between two keypoints.
  */
 declare function midpoint(a: Keypoint, b: Keypoint): Keypoint;
-/**
- * Checks if a keypoint has sufficient visibility confidence.
- */
-declare function isVisible(keypoint: Keypoint, threshold?: number): boolean;
-/**
- * Checks if all keypoints have sufficient visibility.
- */
-declare function allVisible(keypoints: Keypoint[], threshold?: number): boolean;
 
 declare class RepDetector {
     private state;
@@ -175,6 +165,21 @@ declare class FeatureAggregator {
      */
     setPhase(phase: PhaseType): void;
     /**
+     * Calculates hip width (horizontal distance between hips).
+     * Used as a reference measurement for normalization.
+     */
+    private calcHipWidth;
+    /**
+     * Calculates normalized stance width as ratio to hip width.
+     * This is camera-distance independent.
+     *
+     * Typical values:
+     * - Narrow stance: < 1.0 (feet closer than hips)
+     * - Normal stance: 1.0 - 1.5 (feet at hip width or slightly wider)
+     * - Wide stance: > 1.5 (feet wider than 1.5x hip width)
+     */
+    private calcNormalizedStanceWidth;
+    /**
      * Records a feature value for the current frame.
      * Automatically aggregates at both rep and phase level.
      */
@@ -182,7 +187,7 @@ declare class FeatureAggregator {
     /**
      * Convenience method to record common squat features.
      */
-    processFrame(kneeFlexionLeft: number, kneeFlexionRight: number, trunkAngle: number, stanceWidth: number): void;
+    processFrame(kneeFlexionLeft: number, kneeFlexionRight: number, trunkAngle: number, keypoints?: FrameKeypoints): void;
     /**
      * Calculates min value from an array.
      */
@@ -258,10 +263,6 @@ declare class RuleEngine {
      */
     private updateDebounce;
     /**
-     * Gets all currently active (debounced) errors.
-     */
-    getActiveErrors(): Feedback[];
-    /**
      * Evaluate frame-level rules for instant feedback.
      * Call this every frame during exercise.
      */
@@ -271,12 +272,7 @@ declare class RuleEngine {
      */
     private getMeasuredValue;
     /**
-     * Evaluate rules using rep-level aggregates only.
-     */
-    evaluate(data: RepAggregates): Feedback[];
-    /**
      * Evaluate rules using both rep-level and phase-level aggregates.
-     * Call this at the end of a rep.
      */
     evaluateWithPhases(repData: RepAggregates, phaseData?: PhaseAggregates): Feedback[];
     /**
@@ -289,4 +285,4 @@ declare class RuleEngine {
     fullReset(): void;
 }
 
-export { type ComparatorType, type EvaluationType, type ExerciseConfig, FeatureAggregator, type Feedback, type FrameData, type Keypoint, type LetterboxParams, type PhaseAggregates, type PhaseType, type PoseResult, type RepAggregates, RepDetector, type RuleConfig, RuleEngine, type RuleType, type ViewThresholds, type ViewType, allVisible, angleToHorizontal, angleToVertical, calculateAngle, calculateAngle3D, computeLetterbox, distance2D, distance3D, isValidKeypoint, isVisible, mapFromLetterbox, midpoint };
+export { type ComparatorType, type EvaluationType, type ExerciseConfig, FeatureAggregator, type Feedback, type FrameData, type FrameKeypoints, type Keypoint, type LetterboxParams, type PhaseAggregates, type PhaseType, type PoseResult, type RepAggregates, RepDetector, type RuleConfig, RuleEngine, type RuleType, type ViewThresholds, type ViewType, calculateAngle, calculateAngle3D, computeLetterbox, isValidKeypoint, mapFromLetterbox, midpoint };

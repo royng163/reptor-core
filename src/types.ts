@@ -12,6 +12,13 @@ export interface PoseResult {
   timestamp?: number;
 }
 
+export interface FrameKeypoints {
+  hip_left: { x: number; y: number };
+  hip_right: { x: number; y: number };
+  ankle_left: { x: number; y: number };
+  ankle_right: { x: number; y: number };
+}
+
 export type RuleType = "range" | "symmetry" | "stability";
 
 export type ViewType = "front" | "side";

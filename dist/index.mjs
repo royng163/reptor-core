@@ -52,33 +52,6 @@ function calculateAngle3D(a, b, c) {
   const cosAngle = Math.max(-1, Math.min(1, dotProduct / (magnitudeBA * magnitudeBC)));
   return Math.acos(cosAngle) * (180 / Math.PI);
 }
-function angleToVertical(a, b) {
-  if (!isValidKeypoint(a) || !isValidKeypoint(b)) {
-    return NaN;
-  }
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const angleRad = Math.atan2(Math.abs(dx), Math.abs(dy));
-  return angleRad * (180 / Math.PI);
-}
-function angleToHorizontal(a, b) {
-  if (!isValidKeypoint(a) || !isValidKeypoint(b)) {
-    return NaN;
-  }
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const angleRad = Math.atan2(Math.abs(dy), Math.abs(dx));
-  return angleRad * (180 / Math.PI);
-}
-function distance2D(a, b) {
-  return Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
-}
-function distance3D(a, b) {
-  if (a.z === void 0 || b.z === void 0) {
-    return distance2D(a, b);
-  }
-  return Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + (b.z - a.z) ** 2);
-}
 function midpoint(a, b) {
   return {
     x: (a.x + b.x) / 2,
@@ -86,12 +59,6 @@ function midpoint(a, b) {
     z: a.z !== void 0 && b.z !== void 0 ? (a.z + b.z) / 2 : void 0,
     visibility: a.visibility !== void 0 && b.visibility !== void 0 ? (a.visibility + b.visibility) / 2 : void 0
   };
-}
-function isVisible(keypoint, threshold = 0.5) {
-  return keypoint.visibility !== void 0 && keypoint.visibility >= threshold;
-}
-function allVisible(keypoints, threshold = 0.5) {
-  return keypoints.every((kp) => isVisible(kp, threshold));
 }
 
 // src/analysis/repDetector.ts
@@ -204,6 +171,28 @@ var FeatureAggregator = class {
     this.currentPhase = phase;
   }
   /**
+   * Calculates hip width (horizontal distance between hips).
+   * Used as a reference measurement for normalization.
+   */
+  calcHipWidth(hipLeft, hipRight) {
+    return Math.abs(hipRight.x - hipLeft.x);
+  }
+  /**
+   * Calculates normalized stance width as ratio to hip width.
+   * This is camera-distance independent.
+   *
+   * Typical values:
+   * - Narrow stance: < 1.0 (feet closer than hips)
+   * - Normal stance: 1.0 - 1.5 (feet at hip width or slightly wider)
+   * - Wide stance: > 1.5 (feet wider than 1.5x hip width)
+   */
+  calcNormalizedStanceWidth(ankleLeft, ankleRight, hipLeft, hipRight) {
+    const stanceWidth = Math.abs(ankleRight.x - ankleLeft.x);
+    const hipWidth = this.calcHipWidth(hipLeft, hipRight);
+    if (hipWidth === 0) return NaN;
+    return stanceWidth / hipWidth;
+  }
+  /**
    * Records a feature value for the current frame.
    * Automatically aggregates at both rep and phase level.
    */
@@ -221,13 +210,21 @@ var FeatureAggregator = class {
   /**
    * Convenience method to record common squat features.
    */
-  processFrame(kneeFlexionLeft, kneeFlexionRight, trunkAngle, stanceWidth) {
+  processFrame(kneeFlexionLeft, kneeFlexionRight, trunkAngle, keypoints) {
     const kneeFlexion = (kneeFlexionLeft + kneeFlexionRight) / 2;
     this.recordFeature("knee_flexion", kneeFlexion);
     this.recordFeature("knee_flexion_left", kneeFlexionLeft);
     this.recordFeature("knee_flexion_right", kneeFlexionRight);
     this.recordFeature("trunk_angle", trunkAngle);
-    this.recordFeature("stance_width", stanceWidth);
+    if (keypoints) {
+      const normalizedStanceWidth = this.calcNormalizedStanceWidth(
+        keypoints.ankle_left,
+        keypoints.ankle_right,
+        keypoints.hip_left,
+        keypoints.hip_right
+      );
+      this.recordFeature("stance_width", normalizedStanceWidth);
+    }
   }
   /**
    * Calculates min value from an array.
@@ -408,12 +405,6 @@ var RuleEngine = class {
     return !this.activeErrors[ruleId];
   }
   /**
-   * Gets all currently active (debounced) errors.
-   */
-  getActiveErrors() {
-    return this.frameFeedbacks.filter((f) => !f.passed);
-  }
-  /**
    * Evaluate frame-level rules for instant feedback.
    * Call this every frame during exercise.
    */
@@ -465,7 +456,8 @@ var RuleEngine = class {
         errorType: rule.error_type,
         passed: debouncedPassed,
         value: measuredValue,
-        threshold
+        threshold,
+        direction: evalResult.direction
       });
     }
     this.frameFeedbacks = feedbacks;
@@ -514,14 +506,7 @@ var RuleEngine = class {
     return (_t = repData[feature]) != null ? _t : NaN;
   }
   /**
-   * Evaluate rules using rep-level aggregates only.
-   */
-  evaluate(data) {
-    return this.evaluateWithPhases(data);
-  }
-  /**
    * Evaluate rules using both rep-level and phase-level aggregates.
-   * Call this at the end of a rep.
    */
   evaluateWithPhases(repData, phaseData) {
     const feedbacks = [];
@@ -576,6 +561,6 @@ var RuleEngine = class {
   }
 };
 
-export { FeatureAggregator, RepDetector, RuleEngine, allVisible, angleToHorizontal, angleToVertical, calculateAngle, calculateAngle3D, computeLetterbox, distance2D, distance3D, isValidKeypoint, isVisible, mapFromLetterbox, midpoint };
+export { FeatureAggregator, RepDetector, RuleEngine, calculateAngle, calculateAngle3D, computeLetterbox, isValidKeypoint, mapFromLetterbox, midpoint };
 //# sourceMappingURL=index.mjs.map
 //# sourceMappingURL=index.mjs.map

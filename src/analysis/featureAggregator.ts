@@ -1,4 +1,4 @@
-import { RepAggregates, PhaseAggregates, PhaseType } from "../types";
+import { RepAggregates, PhaseAggregates, PhaseType, FrameKeypoints } from "../types";
 
 export class FeatureAggregator {
   private currentPhase: PhaseType = "IDLE";
@@ -25,6 +25,36 @@ export class FeatureAggregator {
   }
 
   /**
+   * Calculates hip width (horizontal distance between hips).
+   * Used as a reference measurement for normalization.
+   */
+  private calcHipWidth(hipLeft: { x: number; y: number }, hipRight: { x: number; y: number }): number {
+    return Math.abs(hipRight.x - hipLeft.x);
+  }
+
+  /**
+   * Calculates normalized stance width as ratio to hip width.
+   * This is camera-distance independent.
+   *
+   * Typical values:
+   * - Narrow stance: < 1.0 (feet closer than hips)
+   * - Normal stance: 1.0 - 1.5 (feet at hip width or slightly wider)
+   * - Wide stance: > 1.5 (feet wider than 1.5x hip width)
+   */
+  private calcNormalizedStanceWidth(
+    ankleLeft: { x: number; y: number },
+    ankleRight: { x: number; y: number },
+    hipLeft: { x: number; y: number },
+    hipRight: { x: number; y: number }
+  ): number {
+    const stanceWidth = Math.abs(ankleRight.x - ankleLeft.x);
+    const hipWidth = this.calcHipWidth(hipLeft, hipRight);
+
+    if (hipWidth === 0) return NaN;
+    return stanceWidth / hipWidth;
+  }
+
+  /**
    * Records a feature value for the current frame.
    * Automatically aggregates at both rep and phase level.
    */
@@ -47,14 +77,29 @@ export class FeatureAggregator {
   /**
    * Convenience method to record common squat features.
    */
-  processFrame(kneeFlexionLeft: number, kneeFlexionRight: number, trunkAngle: number, stanceWidth: number): void {
+  processFrame(
+    kneeFlexionLeft: number,
+    kneeFlexionRight: number,
+    trunkAngle: number,
+    keypoints?: FrameKeypoints
+  ): void {
     const kneeFlexion = (kneeFlexionLeft + kneeFlexionRight) / 2;
 
     this.recordFeature("knee_flexion", kneeFlexion);
     this.recordFeature("knee_flexion_left", kneeFlexionLeft);
     this.recordFeature("knee_flexion_right", kneeFlexionRight);
     this.recordFeature("trunk_angle", trunkAngle);
-    this.recordFeature("stance_width", stanceWidth);
+
+    if (keypoints) {
+      // Normalized stance width (ratio to hip width) - camera independent
+      const normalizedStanceWidth = this.calcNormalizedStanceWidth(
+        keypoints.ankle_left,
+        keypoints.ankle_right,
+        keypoints.hip_left,
+        keypoints.hip_right
+      );
+      this.recordFeature("stance_width", normalizedStanceWidth);
+    }
   }
 
   /**
