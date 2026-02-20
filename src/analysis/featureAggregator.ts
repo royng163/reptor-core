@@ -9,12 +9,12 @@ export class FeatureAggregator {
   // Phase-level aggregates
   private phaseData: {
     IDLE: { [key: string]: number[] };
-    DESCENDING: { [key: string]: number[] };
-    ASCENDING: { [key: string]: number[] };
+    CONCENTRIC: { [key: string]: number[] };
+    ECCENTRIC: { [key: string]: number[] };
   } = {
     IDLE: {},
-    DESCENDING: {},
-    ASCENDING: {},
+    CONCENTRIC: {},
+    ECCENTRIC: {},
   };
 
   /**
@@ -45,7 +45,7 @@ export class FeatureAggregator {
     ankleLeft: { x: number; y: number },
     ankleRight: { x: number; y: number },
     hipLeft: { x: number; y: number },
-    hipRight: { x: number; y: number }
+    hipRight: { x: number; y: number },
   ): number {
     const stanceWidth = Math.abs(ankleRight.x - ankleLeft.x);
     const hipWidth = this.calcHipWidth(hipLeft, hipRight);
@@ -81,7 +81,7 @@ export class FeatureAggregator {
     kneeFlexionLeft: number,
     kneeFlexionRight: number,
     trunkAngle: number,
-    keypoints?: FrameKeypoints
+    keypoints?: FrameKeypoints,
   ): void {
     const kneeFlexion = (kneeFlexionLeft + kneeFlexionRight) / 2;
 
@@ -96,7 +96,7 @@ export class FeatureAggregator {
         keypoints.ankle_left,
         keypoints.ankle_right,
         keypoints.hip_left,
-        keypoints.hip_right
+        keypoints.hip_right,
       );
       this.recordFeature("stance_width", normalizedStanceWidth);
     }
@@ -157,8 +157,8 @@ export class FeatureAggregator {
   getPhaseAggregates(): PhaseAggregates {
     const result: PhaseAggregates = {
       IDLE: {},
-      DESCENDING: {},
-      ASCENDING: {},
+      CONCENTRIC: {},
+      ECCENTRIC: {},
     };
 
     for (const phase of ["IDLE", "DESCENDING", "ASCENDING"] as PhaseType[]) {
@@ -182,8 +182,8 @@ export class FeatureAggregator {
     this.repData = {};
     this.phaseData = {
       IDLE: {},
-      DESCENDING: {},
-      ASCENDING: {},
+      CONCENTRIC: {},
+      ECCENTRIC: {},
     };
   }
 }

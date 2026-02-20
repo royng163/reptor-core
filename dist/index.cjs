@@ -100,17 +100,17 @@ var RepDetector = class {
     switch (this.state) {
       case "IDLE":
         if (velocity > this.MOVEMENT_THRESHOLD) {
-          this.state = "DESCENDING";
+          this.state = "CONCENTRIC";
         }
         break;
-      case "DESCENDING":
+      case "CONCENTRIC":
         if (velocity < -this.MOVEMENT_THRESHOLD) {
-          this.state = "ASCENDING";
+          this.state = "ECCENTRIC";
         }
         break;
-      case "ASCENDING":
+      case "ECCENTRIC":
         if (velocity > this.MOVEMENT_THRESHOLD) {
-          this.state = "DESCENDING";
+          this.state = "CONCENTRIC";
         } else if (Math.abs(velocity) < this.MOVEMENT_THRESHOLD / 2) {
           const startY = this.hipYHistory[0];
           const currentY = hipY;
@@ -162,8 +162,8 @@ var FeatureAggregator = class {
     // Phase-level aggregates
     this.phaseData = {
       IDLE: {},
-      DESCENDING: {},
-      ASCENDING: {}
+      CONCENTRIC: {},
+      ECCENTRIC: {}
     };
   }
   /**
@@ -275,8 +275,8 @@ var FeatureAggregator = class {
   getPhaseAggregates() {
     const result = {
       IDLE: {},
-      DESCENDING: {},
-      ASCENDING: {}
+      CONCENTRIC: {},
+      ECCENTRIC: {}
     };
     for (const phase of ["IDLE", "DESCENDING", "ASCENDING"]) {
       for (const [feature, values] of Object.entries(this.phaseData[phase])) {
@@ -297,8 +297,8 @@ var FeatureAggregator = class {
     this.repData = {};
     this.phaseData = {
       IDLE: {},
-      DESCENDING: {},
-      ASCENDING: {}
+      CONCENTRIC: {},
+      ECCENTRIC: {}
     };
   }
 };
@@ -363,11 +363,11 @@ var RuleEngine = class {
    */
   evaluateComparator(rule, value, threshold) {
     switch (rule.comparator) {
-      case "min":
+      case "ABOVE":
+        return { passed: value >= threshold };
+      case "BELOW":
         return { passed: value <= threshold };
-      case "max":
-        return { passed: value <= threshold };
-      case "mean":
+      case "MEAN":
         const lowerBound = threshold * (1 - this.MEAN_TOLERANCE);
         const upperBound = threshold * (1 + this.MEAN_TOLERANCE);
         if (value < lowerBound) {
@@ -376,7 +376,7 @@ var RuleEngine = class {
           return { passed: false, direction: "high" };
         }
         return { passed: true };
-      case "std":
+      case "STD":
         return { passed: value <= threshold };
       default:
         return { passed: true };
@@ -479,13 +479,13 @@ var RuleEngine = class {
         return left - right;
       }
       const feature2 = rule.feature;
-      if (rule.comparator === "min") {
-        return (_d = (_c = phaseValues[`${feature2}_min`]) != null ? _c : phaseValues[feature2]) != null ? _d : NaN;
-      } else if (rule.comparator === "max") {
-        return (_f = (_e = phaseValues[`${feature2}_max`]) != null ? _e : phaseValues[feature2]) != null ? _f : NaN;
-      } else if (rule.comparator === "mean") {
+      if (rule.comparator === "ABOVE") {
+        return (_d = (_c = phaseValues[`${feature2}_above`]) != null ? _c : phaseValues[feature2]) != null ? _d : NaN;
+      } else if (rule.comparator === "BELOW") {
+        return (_f = (_e = phaseValues[`${feature2}_below`]) != null ? _e : phaseValues[feature2]) != null ? _f : NaN;
+      } else if (rule.comparator === "MEAN") {
         return (_h = (_g = phaseValues[`${feature2}_mean`]) != null ? _g : phaseValues[feature2]) != null ? _h : NaN;
-      } else if (rule.comparator === "std") {
+      } else if (rule.comparator === "STD") {
         return (_i = phaseValues[`${feature2}_std`]) != null ? _i : NaN;
       }
       return (_j = phaseValues[feature2]) != null ? _j : NaN;
@@ -496,13 +496,13 @@ var RuleEngine = class {
       return left - right;
     }
     const feature = rule.feature;
-    if (rule.comparator === "min") {
-      return (_n = (_m = repData[`${feature}_min`]) != null ? _m : repData[feature]) != null ? _n : NaN;
-    } else if (rule.comparator === "max") {
-      return (_p = (_o = repData[`${feature}_max`]) != null ? _o : repData[feature]) != null ? _p : NaN;
-    } else if (rule.comparator === "mean") {
+    if (rule.comparator === "ABOVE") {
+      return (_n = (_m = repData[`${feature}_above`]) != null ? _m : repData[feature]) != null ? _n : NaN;
+    } else if (rule.comparator === "BELOW") {
+      return (_p = (_o = repData[`${feature}_below`]) != null ? _o : repData[feature]) != null ? _p : NaN;
+    } else if (rule.comparator === "MEAN") {
       return (_r = (_q = repData[`${feature}_mean`]) != null ? _q : repData[feature]) != null ? _r : NaN;
-    } else if (rule.comparator === "std") {
+    } else if (rule.comparator === "STD") {
       return (_s = repData[`${feature}_std`]) != null ? _s : NaN;
     }
     return (_t = repData[feature]) != null ? _t : NaN;

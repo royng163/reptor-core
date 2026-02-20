@@ -8,7 +8,7 @@ interface Keypoint {
 interface PoseResult {
     keypoints: Keypoint[];
     keypoints3D?: Keypoint[];
-    timestamp?: number;
+    timestamp: number;
 }
 interface FrameKeypoints {
     hip_left: {
@@ -28,14 +28,15 @@ interface FrameKeypoints {
         y: number;
     };
 }
-type RuleType = "range" | "symmetry" | "stability";
-type ViewType = "front" | "side";
-type ComparatorType = "min" | "max" | "mean" | "std";
-type PhaseType = "IDLE" | "DESCENDING" | "ASCENDING";
-type EvaluationType = "PHASE" | "REP" | "FRAME";
+type RuleType = "range" | "alignment" | "symmetry" | "stability" | "tempo" | "duration";
+type ViewType = "front" | "side" | "45_degree";
+type ComparatorType = "ABOVE" | "BELOW" | "MEAN" | "STD" | "SUM";
+type PhaseType = "CONCENTRIC" | "ECCENTRIC" | "IDLE";
+type IntervalType = "FRAME" | "PHASE" | "REP";
 interface ViewThresholds {
     front?: number;
     side?: number;
+    "45_degree"?: number;
 }
 interface RuleConfig {
     id: string;
@@ -43,7 +44,7 @@ interface RuleConfig {
     type: RuleType;
     comparator: ComparatorType;
     targetPhase: PhaseType;
-    evaluation: EvaluationType;
+    evaluation: IntervalType;
     feature?: string;
     thresholds?: ViewThresholds;
     maxDiff?: ViewThresholds;
@@ -60,13 +61,13 @@ interface RepAggregates {
     [key: string]: number;
 }
 interface PhaseAggregates {
+    CONCENTRIC: {
+        [key: string]: number;
+    };
+    ECCENTRIC: {
+        [key: string]: number;
+    };
     IDLE: {
-        [key: string]: number;
-    };
-    DESCENDING: {
-        [key: string]: number;
-    };
-    ASCENDING: {
         [key: string]: number;
     };
 }
@@ -285,4 +286,4 @@ declare class RuleEngine {
     fullReset(): void;
 }
 
-export { type ComparatorType, type EvaluationType, type ExerciseConfig, FeatureAggregator, type Feedback, type FrameData, type FrameKeypoints, type Keypoint, type LetterboxParams, type PhaseAggregates, type PhaseType, type PoseResult, type RepAggregates, RepDetector, type RuleConfig, RuleEngine, type RuleType, type ViewThresholds, type ViewType, calculateAngle, calculateAngle3D, computeLetterbox, isValidKeypoint, mapFromLetterbox, midpoint };
+export { type ComparatorType, type ExerciseConfig, FeatureAggregator, type Feedback, type FrameData, type FrameKeypoints, type IntervalType, type Keypoint, type LetterboxParams, type PhaseAggregates, type PhaseType, type PoseResult, type RepAggregates, RepDetector, type RuleConfig, RuleEngine, type RuleType, type ViewThresholds, type ViewType, calculateAngle, calculateAngle3D, computeLetterbox, isValidKeypoint, mapFromLetterbox, midpoint };

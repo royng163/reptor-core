@@ -2,14 +2,14 @@ export interface Keypoint {
   x: number; // in source pixel space
   y: number;
   z?: number;
-  visibility?: number; // [0, 1]
+  visibility: number; // [0, 1]
   name?: string;
 }
 
 export interface PoseResult {
   keypoints: Keypoint[];
   keypoints3D?: Keypoint[];
-  timestamp?: number;
+  timestamp: number;
 }
 
 export interface FrameKeypoints {
@@ -19,19 +19,20 @@ export interface FrameKeypoints {
   ankle_right: { x: number; y: number };
 }
 
-export type RuleType = "range" | "symmetry" | "stability";
+export type RuleType = "range" | "alignment" | "symmetry" | "stability" | "tempo" | "duration";
 
-export type ViewType = "front" | "side";
+export type ViewType = "front" | "side" | "45_degree";
 
-export type ComparatorType = "min" | "max" | "mean" | "std";
+export type ComparatorType = "ABOVE" | "BELOW" | "MEAN" | "STD" | "SUM";
 
-export type PhaseType = "IDLE" | "DESCENDING" | "ASCENDING";
+export type PhaseType = "CONCENTRIC" | "ECCENTRIC" | "IDLE";
 
-export type EvaluationType = "PHASE" | "REP" | "FRAME";
+export type IntervalType = "FRAME" | "PHASE" | "REP";
 
 export interface ViewThresholds {
   front?: number;
   side?: number;
+  "45_degree"?: number;
 }
 
 export interface RuleConfig {
@@ -40,7 +41,7 @@ export interface RuleConfig {
   type: RuleType;
   comparator: ComparatorType;
   targetPhase: PhaseType;
-  evaluation: EvaluationType;
+  evaluation: IntervalType;
   feature?: string;
   // View-specific thresholds
   thresholds?: ViewThresholds;
@@ -64,9 +65,9 @@ export interface RepAggregates {
 
 // Data accumulated per phase, keyed by phase then feature name
 export interface PhaseAggregates {
+  CONCENTRIC: { [key: string]: number };
+  ECCENTRIC: { [key: string]: number };
   IDLE: { [key: string]: number };
-  DESCENDING: { [key: string]: number };
-  ASCENDING: { [key: string]: number };
 }
 
 export interface Feedback {

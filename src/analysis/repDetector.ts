@@ -47,22 +47,22 @@ export class RepDetector {
       case "IDLE":
         // If hip moves down significantly, start descending
         if (velocity > this.MOVEMENT_THRESHOLD) {
-          this.state = "DESCENDING";
+          this.state = "CONCENTRIC";
         }
         break;
 
-      case "DESCENDING":
+      case "CONCENTRIC":
         // If hip starts moving up, switch to ascending
         if (velocity < -this.MOVEMENT_THRESHOLD) {
-          this.state = "ASCENDING";
+          this.state = "ECCENTRIC";
         }
         break;
 
-      case "ASCENDING":
+      case "ECCENTRIC":
         // If hip reaches near starting position or stops moving up
         if (velocity > this.MOVEMENT_THRESHOLD) {
           // Started going back down
-          this.state = "DESCENDING";
+          this.state = "CONCENTRIC";
         } else if (Math.abs(velocity) < this.MOVEMENT_THRESHOLD / 2) {
           // Stopped moving - rep complete
           const startY = this.hipYHistory[0];

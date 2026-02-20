@@ -77,14 +77,14 @@ export class RuleEngine {
     threshold: number
   ): { passed: boolean; direction?: "low" | "high" } {
     switch (rule.comparator) {
-      case "min":
-        // For "min" comparator, value should be <= threshold (e.g., depth check)
+      case "ABOVE":
+        // For "ABOVE" comparator, value should be >= threshold (e.g., depth check)
+        return { passed: value >= threshold };
+      case "BELOW":
+        // For "BELOW" comparator, value should be <= threshold (e.g., lockout, forward lean)
         return { passed: value <= threshold };
-      case "max":
-        // For "max" comparator, value should be <= threshold (e.g., lockout, forward lean)
-        return { passed: value <= threshold };
-      case "mean":
-        // For "mean" comparator, allow some tolerance around the threshold
+      case "MEAN":
+        // For "MEAN" comparator, allow some tolerance around the threshold
         const lowerBound = threshold * (1 - this.MEAN_TOLERANCE);
         const upperBound = threshold * (1 + this.MEAN_TOLERANCE);
         if (value < lowerBound) {
@@ -93,8 +93,8 @@ export class RuleEngine {
           return { passed: false, direction: "high" };
         }
         return { passed: true };
-      case "std":
-        // For "std" comparator, standard deviation should be <= threshold
+      case "STD":
+        // For "STD" comparator, standard deviation should be <= threshold
         return { passed: value <= threshold };
       default:
         return { passed: true };
@@ -147,7 +147,7 @@ export class RuleEngine {
       // Only process frame-level rules
       if (rule.evaluation !== "FRAME") continue;
 
-      // Skip if not in target phase (if specified)
+      // Skip if not in target phase
       if (rule.targetPhase && rule.targetPhase !== currentPhase && rule.targetPhase !== "IDLE") {
         // Also update debounce to clear errors when not in target phase
         this.updateDebounce(rule.id, true);
@@ -231,13 +231,13 @@ export class RuleEngine {
 
       // Get the appropriate aggregated value based on comparator
       const feature = rule.feature!;
-      if (rule.comparator === "min") {
-        return phaseValues[`${feature}_min`] ?? phaseValues[feature] ?? NaN;
-      } else if (rule.comparator === "max") {
-        return phaseValues[`${feature}_max`] ?? phaseValues[feature] ?? NaN;
-      } else if (rule.comparator === "mean") {
+      if (rule.comparator === "ABOVE") {
+        return phaseValues[`${feature}_above`] ?? phaseValues[feature] ?? NaN;
+      } else if (rule.comparator === "BELOW") {
+        return phaseValues[`${feature}_below`] ?? phaseValues[feature] ?? NaN;
+      } else if (rule.comparator === "MEAN") {
         return phaseValues[`${feature}_mean`] ?? phaseValues[feature] ?? NaN;
-      } else if (rule.comparator === "std") {
+      } else if (rule.comparator === "STD") {
         return phaseValues[`${feature}_std`] ?? NaN;
       }
 
@@ -252,13 +252,13 @@ export class RuleEngine {
     }
 
     const feature = rule.feature!;
-    if (rule.comparator === "min") {
-      return repData[`${feature}_min`] ?? repData[feature] ?? NaN;
-    } else if (rule.comparator === "max") {
-      return repData[`${feature}_max`] ?? repData[feature] ?? NaN;
-    } else if (rule.comparator === "mean") {
+    if (rule.comparator === "ABOVE") {
+      return repData[`${feature}_above`] ?? repData[feature] ?? NaN;
+    } else if (rule.comparator === "BELOW") {
+      return repData[`${feature}_below`] ?? repData[feature] ?? NaN;
+    } else if (rule.comparator === "MEAN") {
       return repData[`${feature}_mean`] ?? repData[feature] ?? NaN;
-    } else if (rule.comparator === "std") {
+    } else if (rule.comparator === "STD") {
       return repData[`${feature}_std`] ?? NaN;
     }
 
