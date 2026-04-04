@@ -3,6 +3,7 @@ export interface Keypoint {
   y: number;
   z?: number;
   visibility: number; // [0, 1]
+  presence?: number; // [0, 1]
   name?: string;
 }
 
@@ -19,14 +20,19 @@ export interface FrameKeypoints {
   ankle_right: { x: number; y: number };
 }
 
+export type ErrorType =
+  | "INSUFFICIENT_RANGE"
+  | "BAD_ALIGNMENT"
+  | "BAD_SETUP"
+  | "ASYMMETRY"
+  | "INSTABILITY"
+  | "MOMENTUM_CHEAT"
+  | "BAD_TEMPO";
+
 export type RuleType = "range" | "alignment" | "symmetry" | "stability" | "tempo" | "duration";
-
 export type ViewType = "front" | "side" | "45_degree";
-
 export type ComparatorType = "ABOVE" | "BELOW" | "MEAN" | "STD" | "SUM";
-
 export type PhaseType = "CONCENTRIC" | "ECCENTRIC" | "IDLE";
-
 export type IntervalType = "FRAME" | "PHASE" | "REP";
 
 export interface ViewThresholds {
@@ -37,25 +43,32 @@ export interface ViewThresholds {
 
 export interface RuleConfig {
   id: string;
-  error_type: string;
-  type: RuleType;
-  comparator: ComparatorType;
-  targetPhase: PhaseType;
-  evaluation: IntervalType;
+  error_type: ErrorType;
+  template: RuleType;
+  comparator?: ComparatorType;
+  phases?: PhaseType[];
+  interval: IntervalType;
+  views: ViewType[];
+  description?: string;
+  weight?: number;
   feature?: string;
-  // View-specific thresholds
-  thresholds?: ViewThresholds;
-  maxDiff?: ViewThresholds;
-  maxStd?: ViewThresholds;
-  // For symmetry rules
   feature_left?: string;
   feature_right?: string;
+  thresholds?: ViewThresholds;
 }
 
 export interface ExerciseConfig {
   exercise_id: number;
   exercise_name: string;
   rules: RuleConfig[];
+}
+
+export interface RuleEngineOptions {
+  view?: ViewType;
+  thresholds?: ViewThresholds;
+  errorTriggerFrames?: number;
+  errorClearFrames?: number;
+  meanTolerance?: number;
 }
 
 // Data accumulated over a single rep, keyed by feature name
@@ -72,9 +85,19 @@ export interface PhaseAggregates {
 
 export interface Feedback {
   ruleId: string;
-  errorType: string;
+  errorType: ErrorType;
   passed: boolean;
   value: number;
   threshold: number;
   direction?: "low" | "high";
+  weight?: number;
+}
+
+export interface FrameData {
+  knee_flexion: number;
+  knee_flexion_left: number;
+  knee_flexion_right: number;
+  trunk_angle: number;
+  stance_width: number;
+  [key: string]: number;
 }

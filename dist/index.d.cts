@@ -2,7 +2,8 @@ interface Keypoint {
     x: number;
     y: number;
     z?: number;
-    visibility?: number;
+    visibility: number;
+    presence?: number;
     name?: string;
 }
 interface PoseResult {
@@ -10,7 +11,7 @@ interface PoseResult {
     keypoints3D?: Keypoint[];
     timestamp: number;
 }
-interface FrameKeypoints {
+interface FrameKeypoints$1 {
     hip_left: {
         x: number;
         y: number;
@@ -28,6 +29,7 @@ interface FrameKeypoints {
         y: number;
     };
 }
+type ErrorType = "INSUFFICIENT_RANGE" | "BAD_ALIGNMENT" | "BAD_SETUP" | "ASYMMETRY" | "INSTABILITY" | "MOMENTUM_CHEAT" | "BAD_TEMPO";
 type RuleType = "range" | "alignment" | "symmetry" | "stability" | "tempo" | "duration";
 type ViewType = "front" | "side" | "45_degree";
 type ComparatorType = "ABOVE" | "BELOW" | "MEAN" | "STD" | "SUM";
@@ -40,22 +42,30 @@ interface ViewThresholds {
 }
 interface RuleConfig {
     id: string;
-    error_type: string;
-    type: RuleType;
-    comparator: ComparatorType;
-    targetPhase: PhaseType;
-    evaluation: IntervalType;
+    error_type: ErrorType;
+    template: RuleType;
+    comparator?: ComparatorType;
+    phases?: PhaseType[];
+    interval: IntervalType;
+    views: ViewType[];
+    description?: string;
+    weight?: number;
     feature?: string;
-    thresholds?: ViewThresholds;
-    maxDiff?: ViewThresholds;
-    maxStd?: ViewThresholds;
     feature_left?: string;
     feature_right?: string;
+    thresholds?: ViewThresholds;
 }
 interface ExerciseConfig {
     exercise_id: number;
     exercise_name: string;
     rules: RuleConfig[];
+}
+interface RuleEngineOptions {
+    view?: ViewType;
+    thresholds?: ViewThresholds;
+    errorTriggerFrames?: number;
+    errorClearFrames?: number;
+    meanTolerance?: number;
 }
 interface RepAggregates {
     [key: string]: number;
@@ -73,11 +83,20 @@ interface PhaseAggregates {
 }
 interface Feedback {
     ruleId: string;
-    errorType: string;
+    errorType: ErrorType;
     passed: boolean;
     value: number;
     threshold: number;
     direction?: "low" | "high";
+    weight?: number;
+}
+interface FrameData {
+    knee_flexion: number;
+    knee_flexion_left: number;
+    knee_flexion_right: number;
+    trunk_angle: number;
+    stance_width: number;
+    [key: string]: number;
 }
 
 interface LetterboxParams {
@@ -157,6 +176,24 @@ declare class RepDetector {
     reset(): void;
 }
 
+interface FrameKeypoints {
+    ankle_left: {
+        x: number;
+        y: number;
+    };
+    ankle_right: {
+        x: number;
+        y: number;
+    };
+    hip_left: {
+        x: number;
+        y: number;
+    };
+    hip_right: {
+        x: number;
+        y: number;
+    };
+}
 declare class FeatureAggregator {
     private currentPhase;
     private repData;
@@ -219,26 +256,19 @@ declare class FeatureAggregator {
     reset(): void;
 }
 
-interface FrameData {
-    knee_flexion: number;
-    knee_flexion_left: number;
-    knee_flexion_right: number;
-    trunk_angle: number;
-    stance_width: number;
-    [key: string]: number;
-}
 declare class RuleEngine {
     private config;
     private currentView;
+    private readonly thresholds?;
+    private readonly ERROR_TRIGGER_FRAMES;
+    private readonly ERROR_CLEAR_FRAMES;
+    private readonly MEAN_TOLERANCE;
     private frameBuffer;
     private frameFeedbacks;
     private errorCounts;
     private passCounts;
     private activeErrors;
-    private readonly ERROR_TRIGGER_FRAMES;
-    private readonly ERROR_CLEAR_FRAMES;
-    private readonly MEAN_TOLERANCE;
-    constructor(config: ExerciseConfig);
+    constructor(config: ExerciseConfig, options?: RuleEngineOptions);
     /**
      * Sets the current camera view for threshold selection.
      */
@@ -247,6 +277,10 @@ declare class RuleEngine {
      * Gets the current camera view.
      */
     getView(): ViewType;
+    private getRuleId;
+    private getComparator;
+    private getInterval;
+    private getPhases;
     /**
      * Gets the threshold for a rule based on the current view.
      */
@@ -267,7 +301,7 @@ declare class RuleEngine {
      * Evaluate frame-level rules for instant feedback.
      * Call this every frame during exercise.
      */
-    evaluateFrame(frameData: FrameData, currentPhase: string): Feedback[];
+    evaluateFrame(frameData: FrameData, currentPhase: PhaseType): Feedback[];
     /**
      * Gets the measured value for a rule from the appropriate data source.
      */
@@ -286,4 +320,4 @@ declare class RuleEngine {
     fullReset(): void;
 }
 
-export { type ComparatorType, type ExerciseConfig, FeatureAggregator, type Feedback, type FrameData, type FrameKeypoints, type IntervalType, type Keypoint, type LetterboxParams, type PhaseAggregates, type PhaseType, type PoseResult, type RepAggregates, RepDetector, type RuleConfig, RuleEngine, type RuleType, type ViewThresholds, type ViewType, calculateAngle, calculateAngle3D, computeLetterbox, isValidKeypoint, mapFromLetterbox, midpoint };
+export { type ComparatorType, type ErrorType, type ExerciseConfig, FeatureAggregator, type Feedback, type FrameData, type FrameKeypoints$1 as FrameKeypoints, type IntervalType, type Keypoint, type LetterboxParams, type PhaseAggregates, type PhaseType, type PoseResult, type RepAggregates, RepDetector, type RuleConfig, RuleEngine, type RuleEngineOptions, type RuleType, type ViewThresholds, type ViewType, calculateAngle, calculateAngle3D, computeLetterbox, isValidKeypoint, mapFromLetterbox, midpoint };

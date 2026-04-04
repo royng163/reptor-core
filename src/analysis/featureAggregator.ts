@@ -1,4 +1,11 @@
-import { RepAggregates, PhaseAggregates, PhaseType, FrameKeypoints } from "../types";
+import { RepAggregates, PhaseAggregates, PhaseType } from "../types";
+
+interface FrameKeypoints {
+  ankle_left: { x: number; y: number };
+  ankle_right: { x: number; y: number };
+  hip_left: { x: number; y: number };
+  hip_right: { x: number; y: number };
+}
 
 export class FeatureAggregator {
   private currentPhase: PhaseType = "IDLE";
@@ -161,7 +168,7 @@ export class FeatureAggregator {
       ECCENTRIC: {},
     };
 
-    for (const phase of ["IDLE", "DESCENDING", "ASCENDING"] as PhaseType[]) {
+    for (const phase of ["IDLE", "CONCENTRIC", "ECCENTRIC"] as const) {
       for (const [feature, values] of Object.entries(this.phaseData[phase])) {
         result[phase][`${feature}_min`] = this.calcMin(values);
         result[phase][`${feature}_max`] = this.calcMax(values);

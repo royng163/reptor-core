@@ -71,7 +71,6 @@ export function midpoint(a: Keypoint, b: Keypoint): Keypoint {
     x: (a.x + b.x) / 2,
     y: (a.y + b.y) / 2,
     z: a.z !== undefined && b.z !== undefined ? (a.z + b.z) / 2 : undefined,
-    visibility:
-      a.visibility !== undefined && b.visibility !== undefined ? (a.visibility + b.visibility) / 2 : undefined,
+    visibility: (a.visibility + b.visibility) / 2,
   };
 }
