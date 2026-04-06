@@ -61,80 +61,218 @@ function midpoint(a, b) {
   };
 }
 
-// src/analysis/repDetector.ts
-var RepDetector = class {
-  constructor() {
-    this.state = "IDLE";
-    this.hipYHistory = [];
-    // Thresholds for vertical movement detection (in pixels)
-    this.MOVEMENT_THRESHOLD = 7;
-    // Minimum movement to detect phase change
-    this.HISTORY_SIZE = 10;
+// src/utils/fpsNormalizer.ts
+var FPS_WINDOW_MS = 5e3;
+var FpsNormalizer = class {
+  constructor(targetFps = 30) {
+    this.targetIntervalMs = 1e3 / targetFps;
+    this.state = this.createEmptyState();
   }
-  // Frames to average for smoothing
+  createEmptyState() {
+    return {
+      currentSrcTs: 0,
+      nextTargetTs: 0,
+      inputFrameTimestamps: [],
+      normalizedFrameTimestamps: [],
+      inputFps: 0,
+      normalizedFps: 0
+    };
+  }
+  reset() {
+    this.state = this.createEmptyState();
+  }
+  getInputFps() {
+    return this.state.inputFps;
+  }
+  getNormalizedFps() {
+    return this.state.normalizedFps;
+  }
+  updateInputFps(timestamp) {
+    this.state.inputFrameTimestamps.push(timestamp);
+    const cutoff = timestamp - FPS_WINDOW_MS;
+    while (this.state.inputFrameTimestamps.length > 0 && this.state.inputFrameTimestamps[0] < cutoff) {
+      this.state.inputFrameTimestamps.shift();
+    }
+    const windowDurationSec = (timestamp - this.state.inputFrameTimestamps[0]) / 1e3;
+    if (windowDurationSec > 0) {
+      this.state.inputFps = this.state.inputFrameTimestamps.length / windowDurationSec;
+    }
+  }
+  updateNormalizedFps(timestamp) {
+    this.state.normalizedFrameTimestamps.push(timestamp);
+    const cutoff = timestamp - FPS_WINDOW_MS;
+    while (this.state.normalizedFrameTimestamps.length > 0 && this.state.normalizedFrameTimestamps[0] < cutoff) {
+      this.state.normalizedFrameTimestamps.shift();
+    }
+    const windowDurationSec = (timestamp - this.state.normalizedFrameTimestamps[0]) / 1e3;
+    if (windowDurationSec > 0) {
+      this.state.normalizedFps = this.state.normalizedFrameTimestamps.length / windowDurationSec;
+    }
+  }
+  push(keypoints, sourceTimestampMs) {
+    this.updateInputFps(sourceTimestampMs);
+    if (this.state.currentSrcTs == 0) {
+      this.state.currentSrcTs = sourceTimestampMs;
+      this.state.nextTargetTs = sourceTimestampMs;
+      this.updateNormalizedFps(Math.floor(sourceTimestampMs));
+      return [{ timestamp: Math.floor(sourceTimestampMs), keypoints }];
+    }
+    const frameDurationMs = Math.max(1, sourceTimestampMs - this.state.currentSrcTs);
+    const frameEndTs = this.state.currentSrcTs + frameDurationMs;
+    const out = [];
+    while (this.state.nextTargetTs < frameEndTs) {
+      const ts = Math.floor(this.state.nextTargetTs);
+      out.push({ timestamp: ts, keypoints });
+      this.updateNormalizedFps(ts);
+      this.state.nextTargetTs += this.targetIntervalMs;
+    }
+    this.state.currentSrcTs += frameDurationMs;
+    return out;
+  }
+};
+
+// src/analysis/repDetector.ts
+var EXERCISE_IDS = ["squat", "bicep_curl", "shoulder_press", "bench_press", "lat_pulldown"];
+var RepDetector = class {
+  constructor(exerciseId) {
+    this.state = "IDLE";
+    this.valueHistory = [];
+    this.historySize = 10;
+    this.minRepFrames = 10;
+    this.pendingStart = null;
+    this.startValue = null;
+    if (!EXERCISE_IDS.includes(exerciseId)) {
+      throw new Error(`Unsupported exercise_id: ${exerciseId}`);
+    }
+    this.exerciseId = exerciseId;
+  }
   /**
-   * Detects the current phase based on hip vertical position.
-   * @param hipY - The Y coordinate of the hip (midpoint of left and right hip)
+   * Extracts the primary value for rep detection based on exercise type.
+   * Returns the angle value used to detect reps.
    */
-  detect(hipY) {
-    let isRepFinished = false;
-    this.hipYHistory.push(hipY);
-    if (this.hipYHistory.length > this.HISTORY_SIZE) {
-      this.hipYHistory.shift();
+  getPrimaryValue(features) {
+    if (this.exerciseId === "squat") {
+      const left2 = features.knee_flexion_left;
+      const right2 = features.knee_flexion_right;
+      if (left2 == null || right2 == null) return null;
+      return 0.5 * (left2 + right2);
     }
-    if (isNaN(hipY) || hipY === void 0) {
-      return {
-        state: this.state,
-        isRepFinished,
-        velocity: 0
-      };
+    const left = features.elbow_flexion_left;
+    const right = features.elbow_flexion_right;
+    if (left == null || right == null) return null;
+    return 0.5 * (left + right);
+  }
+  /**
+   * Get threshold for this exercise
+   */
+  getThreshold() {
+    switch (this.exerciseId) {
+      case "squat":
+        return 5;
+      case "bicep_curl":
+        return 5;
+      case "shoulder_press":
+        return 6;
+      case "bench_press":
+        return 5;
+      case "lat_pulldown":
+        return 6;
+      default:
+        return 5;
     }
-    if (this.hipYHistory.length < 3) {
-      return { state: this.state, isRepFinished, velocity: 0 };
-    }
-    const recentAvg = this.getRecentAverage(3);
-    const olderAvg = this.getOlderAverage(3);
-    const velocity = recentAvg - olderAvg;
-    switch (this.state) {
-      case "IDLE":
-        if (velocity > this.MOVEMENT_THRESHOLD) {
-          this.state = "CONCENTRIC";
-        }
-        break;
-      case "CONCENTRIC":
-        if (velocity < -this.MOVEMENT_THRESHOLD) {
-          this.state = "ECCENTRIC";
-        }
-        break;
-      case "ECCENTRIC":
-        if (velocity > this.MOVEMENT_THRESHOLD) {
-          this.state = "CONCENTRIC";
-        } else if (Math.abs(velocity) < this.MOVEMENT_THRESHOLD / 2) {
-          const startY = this.hipYHistory[0];
-          const currentY = hipY;
-          if (Math.abs(currentY - startY) < this.MOVEMENT_THRESHOLD * 2) {
-            this.state = "IDLE";
-            isRepFinished = true;
-          }
-        }
-        break;
-    }
-    return { state: this.state, isRepFinished, velocity };
+  }
+  /**
+   * Get completion tolerance to consider "back to start"
+   */
+  getCompletionTolerance() {
+    return this.getThreshold() * 3;
   }
   /**
    * Gets average of most recent N frames.
    */
   getRecentAverage(n) {
-    const recent = this.hipYHistory.slice(-n);
+    const recent = this.valueHistory.slice(-n);
     return recent.reduce((a, b) => a + b, 0) / recent.length;
   }
   /**
    * Gets average of frames before the most recent N frames.
    */
   getOlderAverage(n) {
-    const older = this.hipYHistory.slice(0, -n);
-    if (older.length === 0) return this.hipYHistory[0];
+    const older = this.valueHistory.slice(0, -n);
+    if (older.length === 0) return this.valueHistory[0];
     return older.reduce((a, b) => a + b, 0) / older.length;
+  }
+  /**
+   * Detects the current phase based on primary value.
+   * @param features - Frame features with flexion angles
+   * @param frameIdx - Current frame index
+   */
+  detect(features, frameIdx) {
+    let isRepFinished = false;
+    const value = this.getPrimaryValue(features);
+    if (value == null) {
+      return {
+        state: this.state,
+        isRepFinished,
+        velocity: 0
+      };
+    }
+    this.valueHistory.push(value);
+    if (this.valueHistory.length > this.historySize) {
+      this.valueHistory.shift();
+    }
+    if (this.valueHistory.length < 3) {
+      return { state: this.state, isRepFinished, velocity: 0 };
+    }
+    const recentAvg = this.getRecentAverage(3);
+    const olderAvg = this.getOlderAverage(3);
+    const velocity = recentAvg - olderAvg;
+    const threshold = this.getThreshold();
+    const isConcentricDownwardExercise = this.exerciseId === "squat" || this.exerciseId === "bicep_curl" || this.exerciseId === "lat_pulldown";
+    switch (this.state) {
+      case "IDLE":
+        if (isConcentricDownwardExercise) {
+          if (velocity < -threshold) {
+            this.state = "CONCENTRIC";
+            this.pendingStart = frameIdx;
+            this.startValue = this.valueHistory[this.valueHistory.length - 3];
+          }
+        } else {
+          if (velocity > threshold) {
+            this.state = "CONCENTRIC";
+            this.pendingStart = frameIdx;
+            this.startValue = this.valueHistory[this.valueHistory.length - 3];
+          }
+        }
+        break;
+      case "CONCENTRIC":
+        if (isConcentricDownwardExercise) {
+          if (velocity > threshold) {
+            this.state = "ECCENTRIC";
+          }
+        } else {
+          if (-velocity > threshold) {
+            this.state = "ECCENTRIC";
+          }
+        }
+        break;
+      case "ECCENTRIC":
+        if (Math.abs(velocity) < threshold / 3 && this.startValue != null) {
+          if (Math.abs(value - this.startValue) < this.getCompletionTolerance()) {
+            if (this.pendingStart != null && frameIdx - this.pendingStart >= this.minRepFrames) {
+              isRepFinished = true;
+            }
+            this.state = "IDLE";
+            this.pendingStart = null;
+            this.startValue = null;
+          }
+        } else if (velocity > threshold) {
+          this.state = "CONCENTRIC";
+          this.startValue = this.valueHistory[this.valueHistory.length - 3];
+        }
+        break;
+    }
+    return { state: this.state, isRepFinished, velocity };
   }
   /**
    * Gets the current state.
@@ -147,11 +285,40 @@ var RepDetector = class {
    */
   reset() {
     this.state = "IDLE";
-    this.hipYHistory = [];
+    this.valueHistory = [];
+    this.pendingStart = null;
+    this.startValue = null;
   }
 };
 
 // src/analysis/featureAggregator.ts
+var EXERCISE_FEATURES = {
+  squat: [
+    "knee_flexion_left",
+    "knee_flexion_right",
+    "knee_joint_center_x_offset",
+    "stance_width_normalized",
+    "stance_width",
+    "trunk_angle",
+    "hip_flexion_symmetry"
+  ],
+  bicep_curl: ["elbow_flexion_left", "elbow_flexion_right", "elbow_to_shoulder_y_left", "torso_tilt"],
+  shoulder_press: [
+    "elbow_flexion_left",
+    "elbow_flexion_right",
+    "wrist_to_shoulder_y_left",
+    "wrist_to_shoulder_y_right",
+    "trunk_angle"
+  ],
+  bench_press: [
+    "elbow_flexion_left",
+    "elbow_flexion_right",
+    "wrist_to_shoulder_y_left",
+    "wrist_to_shoulder_y_right",
+    "trunk_angle"
+  ],
+  lat_pulldown: ["wrist_to_shoulder_y_left", "wrist_to_shoulder_y_right", "torso_tilt"]
+};
 var FeatureAggregator = class {
   constructor() {
     this.currentPhase = "IDLE";
@@ -171,28 +338,6 @@ var FeatureAggregator = class {
     this.currentPhase = phase;
   }
   /**
-   * Calculates hip width (horizontal distance between hips).
-   * Used as a reference measurement for normalization.
-   */
-  calcHipWidth(hipLeft, hipRight) {
-    return Math.abs(hipRight.x - hipLeft.x);
-  }
-  /**
-   * Calculates normalized stance width as ratio to hip width.
-   * This is camera-distance independent.
-   *
-   * Typical values:
-   * - Narrow stance: < 1.0 (feet closer than hips)
-   * - Normal stance: 1.0 - 1.5 (feet at hip width or slightly wider)
-   * - Wide stance: > 1.5 (feet wider than 1.5x hip width)
-   */
-  calcNormalizedStanceWidth(ankleLeft, ankleRight, hipLeft, hipRight) {
-    const stanceWidth = Math.abs(ankleRight.x - ankleLeft.x);
-    const hipWidth = this.calcHipWidth(hipLeft, hipRight);
-    if (hipWidth === 0) return NaN;
-    return stanceWidth / hipWidth;
-  }
-  /**
    * Records a feature value for the current frame.
    * Automatically aggregates at both rep and phase level.
    */
@@ -206,25 +351,6 @@ var FeatureAggregator = class {
       this.phaseData[this.currentPhase][featureName] = [];
     }
     this.phaseData[this.currentPhase][featureName].push(value);
-  }
-  /**
-   * Convenience method to record common squat features.
-   */
-  processFrame(kneeFlexionLeft, kneeFlexionRight, trunkAngle, keypoints) {
-    const kneeFlexion = (kneeFlexionLeft + kneeFlexionRight) / 2;
-    this.recordFeature("knee_flexion", kneeFlexion);
-    this.recordFeature("knee_flexion_left", kneeFlexionLeft);
-    this.recordFeature("knee_flexion_right", kneeFlexionRight);
-    this.recordFeature("trunk_angle", trunkAngle);
-    if (keypoints) {
-      const normalizedStanceWidth = this.calcNormalizedStanceWidth(
-        keypoints.ankle_left,
-        keypoints.ankle_right,
-        keypoints.hip_left,
-        keypoints.hip_right
-      );
-      this.recordFeature("stance_width", normalizedStanceWidth);
-    }
   }
   /**
    * Calculates min value from an array.
@@ -298,6 +424,66 @@ var FeatureAggregator = class {
       CONCENTRIC: {},
       ECCENTRIC: {}
     };
+  }
+  extractFeatures(keypoints, exerciseId) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r;
+    const lk = keypoints.get("left_knee");
+    const rk = keypoints.get("right_knee");
+    const lh = keypoints.get("left_hip");
+    const rh = keypoints.get("right_hip");
+    const la = keypoints.get("left_ankle");
+    const ra = keypoints.get("right_ankle");
+    const ls = keypoints.get("left_shoulder");
+    const rs = keypoints.get("right_shoulder");
+    const le = keypoints.get("left_elbow");
+    const re = keypoints.get("right_elbow");
+    const lw = keypoints.get("left_wrist");
+    const rw = keypoints.get("right_wrist");
+    const kneeFlexionLeft = calculateAngle(lh, lk, la);
+    const kneeFlexionRight = calculateAngle(rh, rk, ra);
+    const kneeFlexion = (kneeFlexionLeft + kneeFlexionRight) / 2;
+    const elbowFlexionLeft = calculateAngle(ls, le, lw);
+    const elbowFlexionRight = calculateAngle(rs, re, rw);
+    const trunkAngleLeft = calculateAngle(lh, ls, void 0);
+    const trunkAngleRight = calculateAngle(rh, rs, void 0);
+    const trunkAngle = (trunkAngleLeft + trunkAngleRight) / 2;
+    const hipWidth = Math.abs(((_a = rh == null ? void 0 : rh.x) != null ? _a : 0) - ((_b = lh == null ? void 0 : lh.x) != null ? _b : 0));
+    const stanceWidth = Math.abs(((_c = ra == null ? void 0 : ra.x) != null ? _c : 0) - ((_d = la == null ? void 0 : la.x) != null ? _d : 0));
+    const stanceWidthNormalized = hipWidth > 0 ? stanceWidth / hipWidth : NaN;
+    const kneeJointCenterXOffset = Math.abs(((_e = lk == null ? void 0 : lk.x) != null ? _e : 0) - ((_f = rk == null ? void 0 : rk.x) != null ? _f : 0));
+    const hipFlexionSymmetry = Math.abs(((_g = lh == null ? void 0 : lh.y) != null ? _g : 0) - ((_h = rh == null ? void 0 : rh.y) != null ? _h : 0));
+    const elbowToShoulderYLeft = ((_i = le == null ? void 0 : le.y) != null ? _i : 0) - ((_j = ls == null ? void 0 : ls.y) != null ? _j : 0);
+    const wristToShoulderYLeft = ((_k = lw == null ? void 0 : lw.y) != null ? _k : 0) - ((_l = ls == null ? void 0 : ls.y) != null ? _l : 0);
+    const wristToShoulderYRight = ((_m = rw == null ? void 0 : rw.y) != null ? _m : 0) - ((_n = rs == null ? void 0 : rs.y) != null ? _n : 0);
+    const shoulderCenterX = (((_o = ls == null ? void 0 : ls.x) != null ? _o : 0) + ((_p = rs == null ? void 0 : rs.x) != null ? _p : 0)) / 2;
+    const hipCenterX = (((_q = lh == null ? void 0 : lh.x) != null ? _q : 0) + ((_r = rh == null ? void 0 : rh.x) != null ? _r : 0)) / 2;
+    const torsoTilt = Math.abs(shoulderCenterX - hipCenterX);
+    const frameData = {
+      knee_flexion: kneeFlexion,
+      knee_flexion_left: kneeFlexionLeft,
+      knee_flexion_right: kneeFlexionRight,
+      elbow_flexion_left: elbowFlexionLeft,
+      elbow_flexion_right: elbowFlexionRight,
+      knee_joint_center_x_offset: kneeJointCenterXOffset,
+      stance_width_normalized: stanceWidthNormalized,
+      stance_width: stanceWidth,
+      trunk_angle: trunkAngle,
+      hip_flexion_symmetry: hipFlexionSymmetry,
+      elbow_to_shoulder_y_left: elbowToShoulderYLeft,
+      torso_tilt: torsoTilt,
+      wrist_to_shoulder_y_left: wristToShoulderYLeft,
+      wrist_to_shoulder_y_right: wristToShoulderYRight
+    };
+    const supportedFeatures = EXERCISE_FEATURES[exerciseId];
+    if (supportedFeatures) {
+      for (const feature of supportedFeatures) {
+        const value = frameData[feature];
+        if (value !== void 0) {
+          this.recordFeature(feature, value);
+        }
+      }
+    }
+    return frameData;
   }
 };
 
@@ -426,55 +612,74 @@ var RuleEngine = class {
    */
   evaluateFrame(frameData, currentPhase) {
     const feedbacks = [];
-    this.config.rules.forEach((rule, index) => {
-      var _a, _b, _c, _d;
-      if (rule.interval !== "FRAME") return;
-      const phases = this.getPhases(rule);
-      if (phases.length > 0 && !phases.includes(currentPhase)) {
-        this.updateDebounce(rule.id, true);
-        return;
-      }
-      const threshold = this.getThreshold(rule);
-      if (threshold === void 0) return;
-      const ruleId = this.getRuleId(rule, index);
-      const comparator = this.getComparator(rule);
-      let measuredValue;
-      let evalResult;
-      if (rule.template === "symmetry") {
-        const left = (_a = frameData[rule.feature_left]) != null ? _a : NaN;
-        const right = (_b = frameData[rule.feature_right]) != null ? _b : NaN;
-        if (Number.isNaN(left) || Number.isNaN(right)) return;
-        measuredValue = Math.abs(left - right);
-        evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
-      } else if (rule.template === "stability") {
-        const feature = rule.feature;
-        if (!feature) return;
-        const value = (_c = frameData[feature]) != null ? _c : NaN;
-        if (Number.isNaN(value)) return;
-        if (!this.frameBuffer[ruleId]) this.frameBuffer[ruleId] = [];
-        this.frameBuffer[ruleId].push(value);
-        if (this.frameBuffer[ruleId].length < 10) return;
-        measuredValue = this.calcStd(this.frameBuffer[ruleId]);
-        evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
-      } else {
-        const feature = rule.feature;
-        if (!feature) return;
-        measuredValue = (_d = frameData[feature]) != null ? _d : NaN;
-        if (Number.isNaN(measuredValue)) return;
-        evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
-      }
-      const debouncedPassed = this.updateDebounce(rule.id, evalResult.passed);
-      feedbacks.push({
-        ruleId: rule.id,
-        errorType: rule.error_type,
-        passed: debouncedPassed,
-        value: measuredValue,
-        threshold,
-        direction: evalResult.direction,
-        weight: rule.weight
+    try {
+      this.config.rules.forEach((rule, index) => {
+        var _a, _b, _c, _d;
+        if (rule.interval !== "FRAME") return;
+        const phases = this.getPhases(rule);
+        if (phases.length > 0 && !phases.includes(currentPhase)) {
+          this.updateDebounce(rule.id, true);
+          return;
+        }
+        const threshold = this.getThreshold(rule);
+        if (threshold === void 0) return;
+        const ruleId = this.getRuleId(rule, index);
+        const comparator = this.getComparator(rule);
+        let measuredValue;
+        let evalResult;
+        if (rule.template === "symmetry") {
+          const left = (_a = frameData[rule.feature_left]) != null ? _a : NaN;
+          const right = (_b = frameData[rule.feature_right]) != null ? _b : NaN;
+          if (Number.isNaN(left) || Number.isNaN(right)) return;
+          measuredValue = Math.abs(left - right);
+          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
+        } else if (rule.template === "stability") {
+          const feature = rule.feature;
+          if (!feature) return;
+          const value = (_c = frameData[feature]) != null ? _c : NaN;
+          if (Number.isNaN(value)) return;
+          if (!this.frameBuffer[ruleId]) this.frameBuffer[ruleId] = [];
+          this.frameBuffer[ruleId].push(value);
+          if (this.frameBuffer[ruleId].length < 10) return;
+          measuredValue = this.calcStd(this.frameBuffer[ruleId]);
+          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
+        } else {
+          const feature = rule.feature;
+          if (!feature) return;
+          measuredValue = (_d = frameData[feature]) != null ? _d : NaN;
+          if (Number.isNaN(measuredValue)) return;
+          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
+        }
+        const debouncedPassed = this.updateDebounce(rule.id, evalResult.passed);
+        feedbacks.push({
+          ruleId: rule.id,
+          errorType: rule.error_type,
+          passed: debouncedPassed,
+          value: measuredValue,
+          threshold,
+          direction: evalResult.direction,
+          weight: rule.weight
+        });
       });
+      this.frameFeedbacks = feedbacks;
+    } catch (e) {
+      console.warn("[RuleEngine] evaluateFrame error:", e);
+      return [];
+    }
+    const errors = feedbacks.filter((f) => !f.passed).map((f) => f.errorType);
+    const totalWeight = feedbacks.reduce((s, f) => {
+      var _a;
+      return s + ((_a = f.weight) != null ? _a : 1);
+    }, 0);
+    const failedWeight = feedbacks.filter((f) => !f.passed).reduce((s, f) => {
+      var _a;
+      return s + ((_a = f.weight) != null ? _a : 1);
+    }, 0);
+    const quality = totalWeight > 0 ? Math.max(0, 1 - failedWeight / totalWeight) : 1;
+    feedbacks.forEach((f) => {
+      f.errors = errors;
+      f.quality = quality;
     });
-    this.frameFeedbacks = feedbacks;
     return feedbacks;
   }
   /**
@@ -550,6 +755,6 @@ var RuleEngine = class {
   }
 };
 
-export { FeatureAggregator, RepDetector, RuleEngine, calculateAngle, calculateAngle3D, computeLetterbox, isValidKeypoint, mapFromLetterbox, midpoint };
+export { EXERCISE_IDS, FeatureAggregator, FpsNormalizer, RepDetector, RuleEngine, calculateAngle, calculateAngle3D, computeLetterbox, isValidKeypoint, mapFromLetterbox, midpoint };
 //# sourceMappingURL=index.mjs.map
 //# sourceMappingURL=index.mjs.map

@@ -14,10 +14,10 @@ export interface PoseResult {
 }
 
 export interface FrameKeypoints {
-  hip_left: { x: number; y: number };
-  hip_right: { x: number; y: number };
-  ankle_left: { x: number; y: number };
-  ankle_right: { x: number; y: number };
+  hip_left: Keypoint;
+  hip_right: Keypoint;
+  ankle_left: Keypoint;
+  ankle_right: Keypoint;
 }
 
 export type ErrorType =
@@ -91,6 +91,8 @@ export interface Feedback {
   threshold: number;
   direction?: "low" | "high";
   weight?: number;
+  errors?: string[];
+  quality?: number;
 }
 
 export interface FrameData {
@@ -101,3 +103,5 @@ export interface FrameData {
   stance_width: number;
   [key: string]: number;
 }
+
+export type ExerciseId = "squat" | "bicep_curl" | "shoulder_press" | "bench_press" | "lat_pulldown";

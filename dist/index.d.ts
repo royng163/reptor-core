@@ -11,23 +11,11 @@ interface PoseResult {
     keypoints3D?: Keypoint[];
     timestamp: number;
 }
-interface FrameKeypoints$1 {
-    hip_left: {
-        x: number;
-        y: number;
-    };
-    hip_right: {
-        x: number;
-        y: number;
-    };
-    ankle_left: {
-        x: number;
-        y: number;
-    };
-    ankle_right: {
-        x: number;
-        y: number;
-    };
+interface FrameKeypoints {
+    hip_left: Keypoint;
+    hip_right: Keypoint;
+    ankle_left: Keypoint;
+    ankle_right: Keypoint;
 }
 type ErrorType = "INSUFFICIENT_RANGE" | "BAD_ALIGNMENT" | "BAD_SETUP" | "ASYMMETRY" | "INSTABILITY" | "MOMENTUM_CHEAT" | "BAD_TEMPO";
 type RuleType = "range" | "alignment" | "symmetry" | "stability" | "tempo" | "duration";
@@ -89,6 +77,8 @@ interface Feedback {
     threshold: number;
     direction?: "low" | "high";
     weight?: number;
+    errors?: string[];
+    quality?: number;
 }
 interface FrameData {
     knee_flexion: number;
@@ -98,6 +88,7 @@ interface FrameData {
     stance_width: number;
     [key: string]: number;
 }
+type ExerciseId = "squat" | "bicep_curl" | "shoulder_press" | "bench_press" | "lat_pulldown";
 
 interface LetterboxParams {
     inputSize: number;
@@ -144,20 +135,42 @@ declare function calculateAngle3D(a: Keypoint | undefined, b: Keypoint | undefin
  */
 declare function midpoint(a: Keypoint, b: Keypoint): Keypoint;
 
-declare class RepDetector {
+declare class FpsNormalizer {
+    private readonly targetIntervalMs;
     private state;
-    private hipYHistory;
-    private readonly MOVEMENT_THRESHOLD;
-    private readonly HISTORY_SIZE;
+    constructor(targetFps?: number);
+    private createEmptyState;
+    reset(): void;
+    getInputFps(): number;
+    getNormalizedFps(): number;
+    private updateInputFps;
+    private updateNormalizedFps;
+    push(keypoints: Keypoint[], sourceTimestampMs: number): PoseResult[];
+}
+
+declare const EXERCISE_IDS: ExerciseId[];
+declare class RepDetector {
+    private readonly exerciseId;
+    private state;
+    private valueHistory;
+    private readonly historySize;
+    private readonly minRepFrames;
+    private pendingStart;
+    private startValue;
+    constructor(exerciseId: ExerciseId);
     /**
-     * Detects the current phase based on hip vertical position.
-     * @param hipY - The Y coordinate of the hip (midpoint of left and right hip)
+     * Extracts the primary value for rep detection based on exercise type.
+     * Returns the angle value used to detect reps.
      */
-    detect(hipY: number): {
-        state: PhaseType;
-        isRepFinished: boolean;
-        velocity: number;
-    };
+    private getPrimaryValue;
+    /**
+     * Get threshold for this exercise
+     */
+    private getThreshold;
+    /**
+     * Get completion tolerance to consider "back to start"
+     */
+    private getCompletionTolerance;
     /**
      * Gets average of most recent N frames.
      */
@@ -166,6 +179,21 @@ declare class RepDetector {
      * Gets average of frames before the most recent N frames.
      */
     private getOlderAverage;
+    /**
+     * Detects the current phase based on primary value.
+     * @param features - Frame features with flexion angles
+     * @param frameIdx - Current frame index
+     */
+    detect(features: {
+        knee_flexion_left?: number;
+        knee_flexion_right?: number;
+        elbow_flexion_left?: number;
+        elbow_flexion_right?: number;
+    }, frameIdx: number): {
+        state: PhaseType;
+        isRepFinished: boolean;
+        velocity: number;
+    };
     /**
      * Gets the current state.
      */
@@ -176,24 +204,6 @@ declare class RepDetector {
     reset(): void;
 }
 
-interface FrameKeypoints {
-    ankle_left: {
-        x: number;
-        y: number;
-    };
-    ankle_right: {
-        x: number;
-        y: number;
-    };
-    hip_left: {
-        x: number;
-        y: number;
-    };
-    hip_right: {
-        x: number;
-        y: number;
-    };
-}
 declare class FeatureAggregator {
     private currentPhase;
     private repData;
@@ -203,29 +213,10 @@ declare class FeatureAggregator {
      */
     setPhase(phase: PhaseType): void;
     /**
-     * Calculates hip width (horizontal distance between hips).
-     * Used as a reference measurement for normalization.
-     */
-    private calcHipWidth;
-    /**
-     * Calculates normalized stance width as ratio to hip width.
-     * This is camera-distance independent.
-     *
-     * Typical values:
-     * - Narrow stance: < 1.0 (feet closer than hips)
-     * - Normal stance: 1.0 - 1.5 (feet at hip width or slightly wider)
-     * - Wide stance: > 1.5 (feet wider than 1.5x hip width)
-     */
-    private calcNormalizedStanceWidth;
-    /**
      * Records a feature value for the current frame.
      * Automatically aggregates at both rep and phase level.
      */
     recordFeature(featureName: string, value: number): void;
-    /**
-     * Convenience method to record common squat features.
-     */
-    processFrame(kneeFlexionLeft: number, kneeFlexionRight: number, trunkAngle: number, keypoints?: FrameKeypoints): void;
     /**
      * Calculates min value from an array.
      */
@@ -254,6 +245,7 @@ declare class FeatureAggregator {
      * Resets all aggregated data for a new rep.
      */
     reset(): void;
+    extractFeatures(keypoints: Map<string, Keypoint>, exerciseId: ExerciseId): FrameData;
 }
 
 declare class RuleEngine {
@@ -320,4 +312,4 @@ declare class RuleEngine {
     fullReset(): void;
 }
 
-export { type ComparatorType, type ErrorType, type ExerciseConfig, FeatureAggregator, type Feedback, type FrameData, type FrameKeypoints$1 as FrameKeypoints, type IntervalType, type Keypoint, type LetterboxParams, type PhaseAggregates, type PhaseType, type PoseResult, type RepAggregates, RepDetector, type RuleConfig, RuleEngine, type RuleEngineOptions, type RuleType, type ViewThresholds, type ViewType, calculateAngle, calculateAngle3D, computeLetterbox, isValidKeypoint, mapFromLetterbox, midpoint };
+export { type ComparatorType, EXERCISE_IDS, type ErrorType, type ExerciseConfig, type ExerciseId, FeatureAggregator, type Feedback, FpsNormalizer, type FrameData, type FrameKeypoints, type IntervalType, type Keypoint, type LetterboxParams, type PhaseAggregates, type PhaseType, type PoseResult, type RepAggregates, RepDetector, type RuleConfig, RuleEngine, type RuleEngineOptions, type RuleType, type ViewThresholds, type ViewType, calculateAngle, calculateAngle3D, computeLetterbox, isValidKeypoint, mapFromLetterbox, midpoint };

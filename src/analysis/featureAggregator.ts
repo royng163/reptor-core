@@ -1,11 +1,33 @@
-import { RepAggregates, PhaseAggregates, PhaseType } from "../types";
+import { Keypoint, RepAggregates, PhaseAggregates, PhaseType, FrameData, ExerciseId } from "../types";
+import { calculateAngle } from "../utils/geometry";
 
-interface FrameKeypoints {
-  ankle_left: { x: number; y: number };
-  ankle_right: { x: number; y: number };
-  hip_left: { x: number; y: number };
-  hip_right: { x: number; y: number };
-}
+const EXERCISE_FEATURES: Record<ExerciseId, string[]> = {
+  squat: [
+    "knee_flexion_left",
+    "knee_flexion_right",
+    "knee_joint_center_x_offset",
+    "stance_width_normalized",
+    "stance_width",
+    "trunk_angle",
+    "hip_flexion_symmetry",
+  ],
+  bicep_curl: ["elbow_flexion_left", "elbow_flexion_right", "elbow_to_shoulder_y_left", "torso_tilt"],
+  shoulder_press: [
+    "elbow_flexion_left",
+    "elbow_flexion_right",
+    "wrist_to_shoulder_y_left",
+    "wrist_to_shoulder_y_right",
+    "trunk_angle",
+  ],
+  bench_press: [
+    "elbow_flexion_left",
+    "elbow_flexion_right",
+    "wrist_to_shoulder_y_left",
+    "wrist_to_shoulder_y_right",
+    "trunk_angle",
+  ],
+  lat_pulldown: ["wrist_to_shoulder_y_left", "wrist_to_shoulder_y_right", "torso_tilt"],
+};
 
 export class FeatureAggregator {
   private currentPhase: PhaseType = "IDLE";
@@ -32,36 +54,6 @@ export class FeatureAggregator {
   }
 
   /**
-   * Calculates hip width (horizontal distance between hips).
-   * Used as a reference measurement for normalization.
-   */
-  private calcHipWidth(hipLeft: { x: number; y: number }, hipRight: { x: number; y: number }): number {
-    return Math.abs(hipRight.x - hipLeft.x);
-  }
-
-  /**
-   * Calculates normalized stance width as ratio to hip width.
-   * This is camera-distance independent.
-   *
-   * Typical values:
-   * - Narrow stance: < 1.0 (feet closer than hips)
-   * - Normal stance: 1.0 - 1.5 (feet at hip width or slightly wider)
-   * - Wide stance: > 1.5 (feet wider than 1.5x hip width)
-   */
-  private calcNormalizedStanceWidth(
-    ankleLeft: { x: number; y: number },
-    ankleRight: { x: number; y: number },
-    hipLeft: { x: number; y: number },
-    hipRight: { x: number; y: number },
-  ): number {
-    const stanceWidth = Math.abs(ankleRight.x - ankleLeft.x);
-    const hipWidth = this.calcHipWidth(hipLeft, hipRight);
-
-    if (hipWidth === 0) return NaN;
-    return stanceWidth / hipWidth;
-  }
-
-  /**
    * Records a feature value for the current frame.
    * Automatically aggregates at both rep and phase level.
    */
@@ -79,34 +71,6 @@ export class FeatureAggregator {
       this.phaseData[this.currentPhase][featureName] = [];
     }
     this.phaseData[this.currentPhase][featureName].push(value);
-  }
-
-  /**
-   * Convenience method to record common squat features.
-   */
-  processFrame(
-    kneeFlexionLeft: number,
-    kneeFlexionRight: number,
-    trunkAngle: number,
-    keypoints?: FrameKeypoints,
-  ): void {
-    const kneeFlexion = (kneeFlexionLeft + kneeFlexionRight) / 2;
-
-    this.recordFeature("knee_flexion", kneeFlexion);
-    this.recordFeature("knee_flexion_left", kneeFlexionLeft);
-    this.recordFeature("knee_flexion_right", kneeFlexionRight);
-    this.recordFeature("trunk_angle", trunkAngle);
-
-    if (keypoints) {
-      // Normalized stance width (ratio to hip width) - camera independent
-      const normalizedStanceWidth = this.calcNormalizedStanceWidth(
-        keypoints.ankle_left,
-        keypoints.ankle_right,
-        keypoints.hip_left,
-        keypoints.hip_right,
-      );
-      this.recordFeature("stance_width", normalizedStanceWidth);
-    }
   }
 
   /**
@@ -192,5 +156,76 @@ export class FeatureAggregator {
       CONCENTRIC: {},
       ECCENTRIC: {},
     };
+  }
+
+  /**
+   * Extracts features from keypoints for a given exercise and records them.
+   */
+  extractFeatures(keypoints: Map<string, Keypoint>, exerciseId: ExerciseId): FrameData {
+    const lk = keypoints.get("left_knee");
+    const rk = keypoints.get("right_knee");
+    const lh = keypoints.get("left_hip");
+    const rh = keypoints.get("right_hip");
+    const la = keypoints.get("left_ankle");
+    const ra = keypoints.get("right_ankle");
+    const ls = keypoints.get("left_shoulder");
+    const rs = keypoints.get("right_shoulder");
+    const le = keypoints.get("left_elbow");
+    const re = keypoints.get("right_elbow");
+    const lw = keypoints.get("left_wrist");
+    const rw = keypoints.get("right_wrist");
+
+    const kneeFlexionLeft = calculateAngle(lh, lk, la);
+    const kneeFlexionRight = calculateAngle(rh, rk, ra);
+    const kneeFlexion = (kneeFlexionLeft + kneeFlexionRight) / 2;
+
+    const elbowFlexionLeft = calculateAngle(ls, le, lw);
+    const elbowFlexionRight = calculateAngle(rs, re, rw);
+
+    const trunkAngleLeft = calculateAngle(lh, ls, undefined);
+    const trunkAngleRight = calculateAngle(rh, rs, undefined);
+    const trunkAngle = (trunkAngleLeft + trunkAngleRight) / 2;
+
+    const hipWidth = Math.abs((rh?.x ?? 0) - (lh?.x ?? 0));
+    const stanceWidth = Math.abs((ra?.x ?? 0) - (la?.x ?? 0));
+    const stanceWidthNormalized = hipWidth > 0 ? stanceWidth / hipWidth : NaN;
+
+    const kneeJointCenterXOffset = Math.abs((lk?.x ?? 0) - (rk?.x ?? 0));
+    const hipFlexionSymmetry = Math.abs((lh?.y ?? 0) - (rh?.y ?? 0));
+    const elbowToShoulderYLeft = (le?.y ?? 0) - (ls?.y ?? 0);
+    const wristToShoulderYLeft = (lw?.y ?? 0) - (ls?.y ?? 0);
+    const wristToShoulderYRight = (rw?.y ?? 0) - (rs?.y ?? 0);
+    const shoulderCenterX = ((ls?.x ?? 0) + (rs?.x ?? 0)) / 2;
+    const hipCenterX = ((lh?.x ?? 0) + (rh?.x ?? 0)) / 2;
+    const torsoTilt = Math.abs(shoulderCenterX - hipCenterX);
+
+    const frameData: FrameData = {
+      knee_flexion: kneeFlexion,
+      knee_flexion_left: kneeFlexionLeft,
+      knee_flexion_right: kneeFlexionRight,
+      elbow_flexion_left: elbowFlexionLeft,
+      elbow_flexion_right: elbowFlexionRight,
+      knee_joint_center_x_offset: kneeJointCenterXOffset,
+      stance_width_normalized: stanceWidthNormalized,
+      stance_width: stanceWidth,
+      trunk_angle: trunkAngle,
+      hip_flexion_symmetry: hipFlexionSymmetry,
+      elbow_to_shoulder_y_left: elbowToShoulderYLeft,
+      torso_tilt: torsoTilt,
+      wrist_to_shoulder_y_left: wristToShoulderYLeft,
+      wrist_to_shoulder_y_right: wristToShoulderYRight,
+    };
+
+    const supportedFeatures = EXERCISE_FEATURES[exerciseId];
+    if (supportedFeatures) {
+      for (const feature of supportedFeatures) {
+        const value = frameData[feature];
+        if (value !== undefined) {
+          this.recordFeature(feature, value);
+        }
+      }
+    }
+
+    return frameData;
   }
 }

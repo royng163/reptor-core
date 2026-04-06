@@ -173,73 +173,89 @@ export class RuleEngine {
   evaluateFrame(frameData: FrameData, currentPhase: PhaseType): Feedback[] {
     const feedbacks: Feedback[] = [];
 
-    this.config.rules.forEach((rule, index) => {
-      // Only process frame-level rules
-      if (rule.interval !== "FRAME") return;
+    try {
+      this.config.rules.forEach((rule, index) => {
+        // Only process frame-level rules
+        if (rule.interval !== "FRAME") return;
 
-      // Skip if not in target phase
-      const phases = this.getPhases(rule);
-      if (phases.length > 0 && !phases.includes(currentPhase)) {
-        // Also update debounce to clear errors when not in target phase
-        this.updateDebounce(rule.id, true);
-        return;
-      }
+        // Skip if not in target phase
+        const phases = this.getPhases(rule);
+        if (phases.length > 0 && !phases.includes(currentPhase)) {
+          // Also update debounce to clear errors when not in target phase
+          this.updateDebounce(rule.id, true);
+          return;
+        }
 
-      const threshold = this.getThreshold(rule);
-      if (threshold === undefined) return;
+        const threshold = this.getThreshold(rule);
+        if (threshold === undefined) return;
 
-      const ruleId = this.getRuleId(rule, index);
-      const comparator = this.getComparator(rule);
+        const ruleId = this.getRuleId(rule, index);
+        const comparator = this.getComparator(rule);
 
-      let measuredValue: number;
-      let evalResult: { passed: boolean; direction?: "low" | "high" };
+        let measuredValue: number;
+        let evalResult: { passed: boolean; direction?: "low" | "high" };
 
-      if (rule.template === "symmetry") {
-        // Symmetry check: compare left vs right
-        const left = frameData[rule.feature_left!] ?? NaN;
-        const right = frameData[rule.feature_right!] ?? NaN;
-        if (Number.isNaN(left) || Number.isNaN(right)) return;
-        measuredValue = Math.abs(left - right);
-        evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
-      } else if (rule.template === "stability") {
-        // Stability check: accumulate values and check std dev
-        const feature = rule.feature;
-        if (!feature) return;
-        const value = frameData[feature] ?? NaN;
-        if (Number.isNaN(value)) return;
+        if (rule.template === "symmetry") {
+          // Symmetry check: compare left vs right
+          const left = frameData[rule.feature_left!] ?? NaN;
+          const right = frameData[rule.feature_right!] ?? NaN;
+          if (Number.isNaN(left) || Number.isNaN(right)) return;
+          measuredValue = Math.abs(left - right);
+          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
+        } else if (rule.template === "stability") {
+          // Stability check: accumulate values and check std dev
+          const feature = rule.feature;
+          if (!feature) return;
+          const value = frameData[feature] ?? NaN;
+          if (Number.isNaN(value)) return;
 
-        if (!this.frameBuffer[ruleId]) this.frameBuffer[ruleId] = [];
-        this.frameBuffer[ruleId].push(value);
+          if (!this.frameBuffer[ruleId]) this.frameBuffer[ruleId] = [];
+          this.frameBuffer[ruleId].push(value);
 
-        // Only evaluate if we have enough samples
-        if (this.frameBuffer[ruleId].length < 10) return;
+          // Only evaluate if we have enough samples
+          if (this.frameBuffer[ruleId].length < 10) return;
 
-        measuredValue = this.calcStd(this.frameBuffer[ruleId]);
-        evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
-      } else {
-        const feature = rule.feature;
-        if (!feature) return;
-        measuredValue = frameData[feature] ?? NaN;
-        if (Number.isNaN(measuredValue)) return;
-        evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
-      }
+          measuredValue = this.calcStd(this.frameBuffer[ruleId]);
+          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
+        } else {
+          const feature = rule.feature;
+          if (!feature) return;
+          measuredValue = frameData[feature] ?? NaN;
+          if (Number.isNaN(measuredValue)) return;
+          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
+        }
 
-      // Apply debouncing
-      const debouncedPassed = this.updateDebounce(rule.id, evalResult.passed);
+        // Apply debouncing
+        const debouncedPassed = this.updateDebounce(rule.id, evalResult.passed);
 
-      feedbacks.push({
-        ruleId: rule.id,
-        errorType: rule.error_type,
-        passed: debouncedPassed,
-        value: measuredValue,
-        threshold,
-        direction: evalResult.direction,
-        weight: rule.weight,
+        feedbacks.push({
+          ruleId: rule.id,
+          errorType: rule.error_type,
+          passed: debouncedPassed,
+          value: measuredValue,
+          threshold,
+          direction: evalResult.direction,
+          weight: rule.weight,
+        });
       });
+
+      // Store for final rep evaluation
+      this.frameFeedbacks = feedbacks;
+    } catch (e) {
+      console.warn("[RuleEngine] evaluateFrame error:", e);
+      return [];
+    }
+
+    const errors = feedbacks.filter((f) => !f.passed).map((f) => f.errorType);
+    const totalWeight = feedbacks.reduce((s, f) => s + (f.weight ?? 1), 0);
+    const failedWeight = feedbacks.filter((f) => !f.passed).reduce((s, f) => s + (f.weight ?? 1), 0);
+    const quality = totalWeight > 0 ? Math.max(0, 1 - failedWeight / totalWeight) : 1;
+
+    feedbacks.forEach((f) => {
+      f.errors = errors;
+      f.quality = quality;
     });
 
-    // Store for final rep evaluation
-    this.frameFeedbacks = feedbacks;
     return feedbacks;
   }
 
