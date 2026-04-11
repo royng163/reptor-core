@@ -19,32 +19,37 @@ interface FrameKeypoints {
 }
 type ErrorType = "INSUFFICIENT_RANGE" | "BAD_ALIGNMENT" | "BAD_SETUP" | "ASYMMETRY" | "INSTABILITY" | "MOMENTUM_CHEAT" | "BAD_TEMPO";
 type RuleType = "range" | "alignment" | "symmetry" | "stability" | "tempo" | "duration";
-type ViewType = "front" | "side" | "45_degree";
-type ComparatorType = "ABOVE" | "BELOW" | "MEAN" | "STD" | "SUM";
+type ViewType = "front" | "side" | "incline";
+type ComparatorType = "above" | "below" | "mean" | "std" | "sum" | "min";
 type PhaseType = "CONCENTRIC" | "ECCENTRIC" | "IDLE";
 type IntervalType = "FRAME" | "PHASE" | "REP";
 interface ViewThresholds {
     front?: number;
     side?: number;
-    "45_degree"?: number;
+    incline?: number;
 }
 interface RuleConfig {
     id: string;
-    error_type: ErrorType;
-    template: RuleType;
-    comparator?: ComparatorType;
-    phases?: PhaseType[];
-    interval: IntervalType;
-    views: ViewType[];
-    description?: string;
-    weight?: number;
+    error_type: string;
+    type: string;
+    comparator?: string;
+    targetPhase?: string;
+    evaluation: string;
     feature?: string;
     feature_left?: string;
     feature_right?: string;
     thresholds?: ViewThresholds;
+    maxDiff?: ViewThresholds;
+    max?: ViewThresholds;
+    minSeconds?: ViewThresholds;
+    maxSeconds?: ViewThresholds;
+    maxStd?: ViewThresholds;
+    maxVelocity?: ViewThresholds;
+    description?: string;
+    weight?: number;
 }
 interface ExerciseConfig {
-    exercise_id: number;
+    exercise_id: string;
     exercise_name: string;
     rules: RuleConfig[];
 }
@@ -245,6 +250,9 @@ declare class FeatureAggregator {
      * Resets all aggregated data for a new rep.
      */
     reset(): void;
+    /**
+     * Extracts features from keypoints for a given exercise and records them.
+     */
     extractFeatures(keypoints: Map<string, Keypoint>, exerciseId: ExerciseId): FrameData;
 }
 
@@ -277,6 +285,8 @@ declare class RuleEngine {
      * Gets the threshold for a rule based on the current view.
      */
     private getThreshold;
+    private getTemplate;
+    private getEvaluation;
     /**
      * Calculates standard deviation of an array of numbers.
      */

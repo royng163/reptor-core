@@ -30,35 +30,40 @@ export type ErrorType =
   | "BAD_TEMPO";
 
 export type RuleType = "range" | "alignment" | "symmetry" | "stability" | "tempo" | "duration";
-export type ViewType = "front" | "side" | "45_degree";
-export type ComparatorType = "ABOVE" | "BELOW" | "MEAN" | "STD" | "SUM";
+export type ViewType = "front" | "side" | "incline";
+export type ComparatorType = "above" | "below" | "mean" | "std" | "sum" | "min";
 export type PhaseType = "CONCENTRIC" | "ECCENTRIC" | "IDLE";
 export type IntervalType = "FRAME" | "PHASE" | "REP";
 
 export interface ViewThresholds {
   front?: number;
   side?: number;
-  "45_degree"?: number;
+  incline?: number;
 }
 
 export interface RuleConfig {
   id: string;
-  error_type: ErrorType;
-  template: RuleType;
-  comparator?: ComparatorType;
-  phases?: PhaseType[];
-  interval: IntervalType;
-  views: ViewType[];
-  description?: string;
-  weight?: number;
+  error_type: string;
+  type: string;
+  comparator?: string;
+  targetPhase?: string;
+  evaluation: string;
   feature?: string;
   feature_left?: string;
   feature_right?: string;
   thresholds?: ViewThresholds;
+  maxDiff?: ViewThresholds;
+  max?: ViewThresholds;
+  minSeconds?: ViewThresholds;
+  maxSeconds?: ViewThresholds;
+  maxStd?: ViewThresholds;
+  maxVelocity?: ViewThresholds;
+  description?: string;
+  weight?: number;
 }
 
 export interface ExerciseConfig {
-  exercise_id: number;
+  exercise_id: string;
   exercise_name: string;
   rules: RuleConfig[];
 }

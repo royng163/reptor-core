@@ -425,6 +425,9 @@ var FeatureAggregator = class {
       ECCENTRIC: {}
     };
   }
+  /**
+   * Extracts features from keypoints for a given exercise and records them.
+   */
   extractFeatures(keypoints, exerciseId) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r;
     const lk = keypoints.get("left_knee");
@@ -519,38 +522,46 @@ var RuleEngine = class {
   }
   getRuleId(rule, index) {
     var _a;
-    return (_a = rule.id) != null ? _a : `${rule.error_type}_${rule.template}_${rule.interval}_${index}`;
+    return (_a = rule.id) != null ? _a : `${rule.error_type}_${rule.type}_${rule.evaluation}_${index}`;
   }
   getComparator(rule) {
     if (rule.comparator) return rule.comparator;
-    switch (rule.template) {
-      case "stability":
-        return "STD";
-      case "symmetry":
-        return "BELOW";
+    switch (rule.type) {
       case "range":
+        return "below";
       case "alignment":
-      case "tempo":
+        return "min";
       case "duration":
+        return "min";
+      case "tempo":
+        return "min";
+      case "stability":
+        return "std";
+      case "symmetry":
+        return "min";
       default:
-        return "BELOW";
+        return "below";
     }
   }
   getInterval(rule) {
-    var _a;
-    return (_a = rule.interval) != null ? _a : "REP";
+    return rule.evaluation.toUpperCase() || "REP";
   }
   getPhases(rule) {
-    var _a;
-    if ((_a = rule.phases) == null ? void 0 : _a.length) return rule.phases;
-    return [];
+    return rule.targetPhase ? [rule.targetPhase] : [];
   }
   /**
    * Gets the threshold for a rule based on the current view.
    */
   getThreshold(rule) {
-    var _a;
-    return (_a = rule.thresholds) == null ? void 0 : _a[this.currentView];
+    var _a, _b, _c, _d, _e, _f;
+    const thresholds = (_f = (_e = (_d = (_c = (_b = (_a = rule.thresholds) != null ? _a : rule.maxDiff) != null ? _b : rule.max) != null ? _c : rule.minSeconds) != null ? _d : rule.maxStd) != null ? _e : rule.maxVelocity) != null ? _f : rule.maxSeconds;
+    return thresholds == null ? void 0 : thresholds[this.currentView];
+  }
+  getTemplate(rule) {
+    return rule.type;
+  }
+  getEvaluation(rule) {
+    return rule.evaluation;
   }
   /**
    * Calculates standard deviation of an array of numbers.
@@ -565,9 +576,11 @@ var RuleEngine = class {
    * Evaluates if a value passes the rule based on comparator and threshold.
    */
   evaluateComparator(comparator, value, threshold) {
-    switch (comparator) {
+    const comp = comparator.toUpperCase();
+    switch (comp) {
       case "ABOVE":
         return { passed: value >= threshold };
+      case "MIN":
       case "BELOW":
         return { passed: value <= threshold };
       case "MEAN":
@@ -614,8 +627,9 @@ var RuleEngine = class {
     const feedbacks = [];
     try {
       this.config.rules.forEach((rule, index) => {
-        var _a, _b, _c, _d;
-        if (rule.interval !== "FRAME") return;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+        const interval = this.getEvaluation(rule);
+        if (interval !== "FRAME") return;
         const phases = this.getPhases(rule);
         if (phases.length > 0 && !phases.includes(currentPhase)) {
           this.updateDebounce(rule.id, true);
@@ -625,15 +639,20 @@ var RuleEngine = class {
         if (threshold === void 0) return;
         const ruleId = this.getRuleId(rule, index);
         const comparator = this.getComparator(rule);
+        const template = this.getTemplate(rule);
         let measuredValue;
         let evalResult;
-        if (rule.template === "symmetry") {
+        if (template === "symmetry") {
           const left = (_a = frameData[rule.feature_left]) != null ? _a : NaN;
           const right = (_b = frameData[rule.feature_right]) != null ? _b : NaN;
           if (Number.isNaN(left) || Number.isNaN(right)) return;
           measuredValue = Math.abs(left - right);
-          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
-        } else if (rule.template === "stability") {
+          evalResult = this.evaluateComparator(
+            comparator,
+            measuredValue,
+            threshold
+          );
+        } else if (template === "stability") {
           const feature = rule.feature;
           if (!feature) return;
           const value = (_c = frameData[feature]) != null ? _c : NaN;
@@ -642,13 +661,63 @@ var RuleEngine = class {
           this.frameBuffer[ruleId].push(value);
           if (this.frameBuffer[ruleId].length < 10) return;
           measuredValue = this.calcStd(this.frameBuffer[ruleId]);
-          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
-        } else {
+          evalResult = this.evaluateComparator(
+            comparator,
+            measuredValue,
+            threshold
+          );
+        } else if (template === "duration") {
           const feature = rule.feature;
           if (!feature) return;
           measuredValue = (_d = frameData[feature]) != null ? _d : NaN;
           if (Number.isNaN(measuredValue)) return;
-          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
+          const minSeconds = (_e = rule.minSeconds) == null ? void 0 : _e[this.currentView];
+          const maxSeconds = (_f = rule.maxSeconds) == null ? void 0 : _f[this.currentView];
+          if (minSeconds !== void 0 && maxSeconds !== void 0) {
+            if (measuredValue < minSeconds) {
+              evalResult = { passed: false, direction: "low" };
+            } else if (measuredValue > maxSeconds) {
+              evalResult = { passed: false, direction: "high" };
+            } else {
+              evalResult = { passed: true };
+            }
+          } else if (minSeconds !== void 0) {
+            evalResult = this.evaluateComparator(
+              comparator,
+              measuredValue,
+              minSeconds
+            );
+          } else if (maxSeconds !== void 0) {
+            evalResult = this.evaluateComparator(
+              comparator,
+              measuredValue,
+              maxSeconds
+            );
+          } else {
+            return;
+          }
+        } else if (template === "tempo") {
+          const feature = rule.feature;
+          if (!feature) return;
+          measuredValue = (_g = frameData[feature]) != null ? _g : NaN;
+          if (Number.isNaN(measuredValue)) return;
+          const maxVelocity = (_h = rule.maxVelocity) == null ? void 0 : _h[this.currentView];
+          if (maxVelocity === void 0) return;
+          evalResult = this.evaluateComparator(
+            comparator,
+            measuredValue,
+            maxVelocity
+          );
+        } else {
+          const feature = rule.feature;
+          if (!feature) return;
+          measuredValue = (_i = frameData[feature]) != null ? _i : NaN;
+          if (Number.isNaN(measuredValue)) return;
+          evalResult = this.evaluateComparator(
+            comparator,
+            measuredValue,
+            threshold
+          );
         }
         const debouncedPassed = this.updateDebounce(rule.id, evalResult.passed);
         feedbacks.push({
@@ -686,23 +755,29 @@ var RuleEngine = class {
    * Gets the measured value for a rule from the appropriate data source.
    */
   getMeasuredValue(rule, index, repData, phaseData) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n;
     const comparator = this.getComparator(rule);
     const interval = this.getInterval(rule);
     const dataSource = interval === "PHASE" && phaseData ? phaseData[this.getPhases(rule)[0]] : repData;
     if (!dataSource) return NaN;
-    if (rule.template === "symmetry") {
+    const ruleType = rule.type;
+    if (ruleType === "symmetry") {
       const left = (_b = dataSource[(_a = rule.feature_left) != null ? _a : ""]) != null ? _b : NaN;
       const right = (_d = dataSource[(_c = rule.feature_right) != null ? _c : ""]) != null ? _d : NaN;
       return left - right;
     }
     const feature = rule.feature;
     if (!feature) return NaN;
-    if (comparator === "ABOVE") return (_f = (_e = dataSource[`${feature}_above`]) != null ? _e : dataSource[feature]) != null ? _f : NaN;
-    if (comparator === "BELOW") return (_h = (_g = dataSource[`${feature}_below`]) != null ? _g : dataSource[feature]) != null ? _h : NaN;
-    if (comparator === "MEAN") return (_j = (_i = dataSource[`${feature}_mean`]) != null ? _i : dataSource[feature]) != null ? _j : NaN;
-    if (comparator === "STD") return (_k = dataSource[`${feature}_std`]) != null ? _k : NaN;
-    return (_l = dataSource[feature]) != null ? _l : NaN;
+    if (comparator === "above")
+      return (_f = (_e = dataSource[`${feature}_max`]) != null ? _e : dataSource[feature]) != null ? _f : NaN;
+    if (comparator === "below")
+      return (_h = (_g = dataSource[`${feature}_min`]) != null ? _g : dataSource[feature]) != null ? _h : NaN;
+    if (comparator === "min")
+      return (_j = (_i = dataSource[`${feature}_min`]) != null ? _i : dataSource[feature]) != null ? _j : NaN;
+    if (comparator === "mean")
+      return (_l = (_k = dataSource[`${feature}_mean`]) != null ? _k : dataSource[feature]) != null ? _l : NaN;
+    if (comparator === "std") return (_m = dataSource[`${feature}_std`]) != null ? _m : NaN;
+    return (_n = dataSource[feature]) != null ? _n : NaN;
   }
   /**
    * Evaluate rules using both rep-level and phase-level aggregates.
@@ -710,20 +785,62 @@ var RuleEngine = class {
   evaluateWithPhases(repData, phaseData) {
     const feedbacks = [];
     this.config.rules.forEach((rule, index) => {
+      var _a, _b;
       const interval = this.getInterval(rule);
       const ruleId = this.getRuleId(rule, index);
       const threshold = this.getThreshold(rule);
       if (threshold === void 0) return;
       if (interval === "FRAME") {
-        const frameFeedback = this.frameFeedbacks.find((f) => f.ruleId === ruleId);
+        const frameFeedback = this.frameFeedbacks.find(
+          (f) => f.ruleId === ruleId
+        );
         if (frameFeedback) feedbacks.push(frameFeedback);
         return;
       }
       if (interval === "PHASE" && !phaseData) return;
-      const measuredValue = this.getMeasuredValue(rule, index, repData, phaseData);
+      const measuredValue = this.getMeasuredValue(
+        rule,
+        index,
+        repData,
+        phaseData
+      );
       if (Number.isNaN(measuredValue)) return;
-      const valueToCompare = rule.template === "symmetry" ? Math.abs(measuredValue) : measuredValue;
-      const evalResult = this.evaluateComparator(this.getComparator(rule), valueToCompare, threshold);
+      const ruleType = rule.type;
+      let evalResult;
+      if (ruleType === "duration") {
+        const minSeconds = (_a = rule.minSeconds) == null ? void 0 : _a[this.currentView];
+        const maxSeconds = (_b = rule.maxSeconds) == null ? void 0 : _b[this.currentView];
+        if (minSeconds !== void 0 && maxSeconds !== void 0) {
+          if (measuredValue < minSeconds) {
+            evalResult = { passed: false, direction: "low" };
+          } else if (measuredValue > maxSeconds) {
+            evalResult = { passed: false, direction: "high" };
+          } else {
+            evalResult = { passed: true };
+          }
+        } else if (minSeconds !== void 0) {
+          evalResult = this.evaluateComparator(
+            this.getComparator(rule),
+            measuredValue,
+            minSeconds
+          );
+        } else if (maxSeconds !== void 0) {
+          evalResult = this.evaluateComparator(
+            this.getComparator(rule),
+            measuredValue,
+            maxSeconds
+          );
+        } else {
+          return;
+        }
+      } else {
+        const valueToCompare = ruleType === "symmetry" ? Math.abs(measuredValue) : measuredValue;
+        evalResult = this.evaluateComparator(
+          this.getComparator(rule),
+          valueToCompare,
+          threshold
+        );
+      }
       feedbacks.push({
         ruleId,
         errorType: rule.error_type,

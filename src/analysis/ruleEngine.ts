@@ -10,6 +10,7 @@ import {
   ComparatorType,
   PhaseType,
   RuleEngineOptions,
+  ErrorType,
 } from "../types";
 
 export class RuleEngine {
@@ -55,40 +56,67 @@ export class RuleEngine {
   }
 
   private getRuleId(rule: RuleConfig, index: number): string {
-    return rule.id ?? `${rule.error_type}_${rule.template}_${rule.interval}_${index}`;
+    return (
+      rule.id ?? `${rule.error_type}_${rule.type}_${rule.evaluation}_${index}`
+    );
   }
 
   private getComparator(rule: RuleConfig): ComparatorType {
-    if (rule.comparator) return rule.comparator;
+    if (rule.comparator) return rule.comparator as ComparatorType;
 
-    switch (rule.template) {
-      case "stability":
-        return "STD";
-      case "symmetry":
-        return "BELOW";
+    switch (rule.type) {
       case "range":
+        // range uses "below" by default (value should be below threshold)
+        return "below";
       case "alignment":
-      case "tempo":
+        // alignment uses "min" by default (value should be above min threshold)
+        return "min";
       case "duration":
+        // duration uses "min" by default (value should be >= minSeconds)
+        return "min";
+      case "tempo":
+        // tempo uses "min" by default (value should be below maxVelocity)
+        return "min";
+      case "stability":
+        return "std";
+      case "symmetry":
+        return "min";
       default:
-        return "BELOW";
+        return "below";
     }
   }
 
   private getInterval(rule: RuleConfig): "FRAME" | "PHASE" | "REP" {
-    return rule.interval ?? "REP";
+    return (
+      (rule.evaluation.toUpperCase() as "FRAME" | "PHASE" | "REP") || "REP"
+    );
   }
 
   private getPhases(rule: RuleConfig): string[] {
-    if (rule.phases?.length) return rule.phases;
-    return [];
+    return rule.targetPhase ? [rule.targetPhase] : [];
   }
 
   /**
    * Gets the threshold for a rule based on the current view.
    */
   private getThreshold(rule: RuleConfig): number | undefined {
-    return rule.thresholds?.[this.currentView];
+    const thresholds =
+      rule.thresholds ??
+      rule.maxDiff ??
+      rule.max ??
+      rule.minSeconds ??
+      rule.maxStd ??
+      rule.maxVelocity ??
+      rule.maxSeconds;
+    return thresholds?.[this.currentView];
+  }
+
+  private getTemplate(rule: RuleConfig): string {
+    return rule.type;
+  }
+
+  private getEvaluation(rule: RuleConfig): string {
+    return rule.evaluation;
   }
 
   /**
@@ -109,10 +137,12 @@ export class RuleEngine {
     value: number,
     threshold: number,
   ): { passed: boolean; direction?: "low" | "high" } {
-    switch (comparator) {
+    const comp = comparator.toUpperCase();
+    switch (comp) {
       case "ABOVE":
         // For "ABOVE" comparator, value should be >= threshold (e.g., depth check)
         return { passed: value >= threshold };
+      case "MIN":
       case "BELOW":
         // For "BELOW" comparator, value should be <= threshold (e.g., lockout, forward lean)
         return { passed: value <= threshold };
@@ -148,7 +178,10 @@ export class RuleEngine {
       this.passCounts[ruleId]++;
 
       // Clear active error after enough consecutive passes
-      if (this.activeErrors[ruleId] && this.passCounts[ruleId] >= this.ERROR_CLEAR_FRAMES) {
+      if (
+        this.activeErrors[ruleId] &&
+        this.passCounts[ruleId] >= this.ERROR_CLEAR_FRAMES
+      ) {
         this.activeErrors[ruleId] = false;
       }
     } else {
@@ -176,7 +209,9 @@ export class RuleEngine {
     try {
       this.config.rules.forEach((rule, index) => {
         // Only process frame-level rules
-        if (rule.interval !== "FRAME") return;
+        const interval = this.getEvaluation(rule);
+
+        if (interval !== "FRAME") return;
 
         // Skip if not in target phase
         const phases = this.getPhases(rule);
@@ -191,18 +226,23 @@ export class RuleEngine {
 
         const ruleId = this.getRuleId(rule, index);
         const comparator = this.getComparator(rule);
+        const template = this.getTemplate(rule);
 
         let measuredValue: number;
         let evalResult: { passed: boolean; direction?: "low" | "high" };
 
-        if (rule.template === "symmetry") {
+        if (template === "symmetry") {
           // Symmetry check: compare left vs right
           const left = frameData[rule.feature_left!] ?? NaN;
           const right = frameData[rule.feature_right!] ?? NaN;
           if (Number.isNaN(left) || Number.isNaN(right)) return;
           measuredValue = Math.abs(left - right);
-          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
-        } else if (rule.template === "stability") {
+          evalResult = this.evaluateComparator(
+            comparator,
+            measuredValue,
+            threshold,
+          );
+        } else if (template === "stability") {
           // Stability check: accumulate values and check std dev
           const feature = rule.feature;
           if (!feature) return;
@@ -212,17 +252,68 @@ export class RuleEngine {
           if (!this.frameBuffer[ruleId]) this.frameBuffer[ruleId] = [];
           this.frameBuffer[ruleId].push(value);
 
-          // Only evaluate if we have enough samples
           if (this.frameBuffer[ruleId].length < 10) return;
 
           measuredValue = this.calcStd(this.frameBuffer[ruleId]);
-          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
+          evalResult = this.evaluateComparator(
+            comparator,
+            measuredValue,
+            threshold,
+          );
+        } else if (template === "duration") {
+          const feature = rule.feature;
+          if (!feature) return;
+          measuredValue = frameData[feature] ?? NaN;
+          if (Number.isNaN(measuredValue)) return;
+
+          const minSeconds = rule.minSeconds?.[this.currentView];
+          const maxSeconds = rule.maxSeconds?.[this.currentView];
+
+          if (minSeconds !== undefined && maxSeconds !== undefined) {
+            if (measuredValue < minSeconds) {
+              evalResult = { passed: false, direction: "low" };
+            } else if (measuredValue > maxSeconds) {
+              evalResult = { passed: false, direction: "high" };
+            } else {
+              evalResult = { passed: true };
+            }
+          } else if (minSeconds !== undefined) {
+            evalResult = this.evaluateComparator(
+              comparator,
+              measuredValue,
+              minSeconds,
+            );
+          } else if (maxSeconds !== undefined) {
+            evalResult = this.evaluateComparator(
+              comparator,
+              measuredValue,
+              maxSeconds,
+            );
+          } else {
+            return;
+          }
+        } else if (template === "tempo") {
+          const feature = rule.feature;
+          if (!feature) return;
+          measuredValue = frameData[feature] ?? NaN;
+          if (Number.isNaN(measuredValue)) return;
+          const maxVelocity = rule.maxVelocity?.[this.currentView];
+          if (maxVelocity === undefined) return;
+          evalResult = this.evaluateComparator(
+            comparator,
+            measuredValue,
+            maxVelocity,
+          );
         } else {
           const feature = rule.feature;
           if (!feature) return;
           measuredValue = frameData[feature] ?? NaN;
           if (Number.isNaN(measuredValue)) return;
-          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
+          evalResult = this.evaluateComparator(
+            comparator,
+            measuredValue,
+            threshold,
+          );
         }
 
         // Apply debouncing
@@ -230,7 +321,7 @@ export class RuleEngine {
 
         feedbacks.push({
           ruleId: rule.id,
-          errorType: rule.error_type,
+          errorType: rule.error_type as ErrorType,
           passed: debouncedPassed,
           value: measuredValue,
           threshold,
@@ -248,8 +339,11 @@ export class RuleEngine {
 
     const errors = feedbacks.filter((f) => !f.passed).map((f) => f.errorType);
     const totalWeight = feedbacks.reduce((s, f) => s + (f.weight ?? 1), 0);
-    const failedWeight = feedbacks.filter((f) => !f.passed).reduce((s, f) => s + (f.weight ?? 1), 0);
-    const quality = totalWeight > 0 ? Math.max(0, 1 - failedWeight / totalWeight) : 1;
+    const failedWeight = feedbacks
+      .filter((f) => !f.passed)
+      .reduce((s, f) => s + (f.weight ?? 1), 0);
+    const quality =
+      totalWeight > 0 ? Math.max(0, 1 - failedWeight / totalWeight) : 1;
 
     feedbacks.forEach((f) => {
       f.errors = errors;
@@ -272,12 +366,15 @@ export class RuleEngine {
     const interval = this.getInterval(rule);
 
     const dataSource =
-      interval === "PHASE" && phaseData ? phaseData[this.getPhases(rule)[0] as keyof PhaseAggregates] : repData;
+      interval === "PHASE" && phaseData
+        ? phaseData[this.getPhases(rule)[0] as keyof PhaseAggregates]
+        : repData;
 
     if (!dataSource) return NaN;
 
-    // rep-level evaluation
-    if (rule.template === "symmetry") {
+    const ruleType = rule.type;
+
+    if (ruleType === "symmetry") {
       const left = dataSource[rule.feature_left ?? ""] ?? NaN;
       const right = dataSource[rule.feature_right ?? ""] ?? NaN;
       return left - right;
@@ -286,10 +383,15 @@ export class RuleEngine {
     const feature = rule.feature;
     if (!feature) return NaN;
 
-    if (comparator === "ABOVE") return dataSource[`${feature}_above`] ?? dataSource[feature] ?? NaN;
-    if (comparator === "BELOW") return dataSource[`${feature}_below`] ?? dataSource[feature] ?? NaN;
-    if (comparator === "MEAN") return dataSource[`${feature}_mean`] ?? dataSource[feature] ?? NaN;
-    if (comparator === "STD") return dataSource[`${feature}_std`] ?? NaN;
+    if (comparator === "above")
+      return dataSource[`${feature}_max`] ?? dataSource[feature] ?? NaN;
+    if (comparator === "below")
+      return dataSource[`${feature}_min`] ?? dataSource[feature] ?? NaN;
+    if (comparator === "min")
+      return dataSource[`${feature}_min`] ?? dataSource[feature] ?? NaN;
+    if (comparator === "mean")
+      return dataSource[`${feature}_mean`] ?? dataSource[feature] ?? NaN;
+    if (comparator === "std") return dataSource[`${feature}_std`] ?? NaN;
 
     return dataSource[feature] ?? NaN;
   }
@@ -297,7 +399,10 @@ export class RuleEngine {
   /**
    * Evaluate rules using both rep-level and phase-level aggregates.
    */
-  evaluateWithPhases(repData: RepAggregates, phaseData?: PhaseAggregates): Feedback[] {
+  evaluateWithPhases(
+    repData: RepAggregates,
+    phaseData?: PhaseAggregates,
+  ): Feedback[] {
     const feedbacks: Feedback[] = [];
 
     this.config.rules.forEach((rule, index) => {
@@ -310,7 +415,9 @@ export class RuleEngine {
       if (threshold === undefined) return;
       // Handle frame-level rules from accumulated data
       if (interval === "FRAME") {
-        const frameFeedback = this.frameFeedbacks.find((f) => f.ruleId === ruleId);
+        const frameFeedback = this.frameFeedbacks.find(
+          (f) => f.ruleId === ruleId,
+        );
         if (frameFeedback) feedbacks.push(frameFeedback);
         return;
       }
@@ -318,18 +425,59 @@ export class RuleEngine {
       // Skip phase-evaluation rules if no phase data provided
       if (interval === "PHASE" && !phaseData) return;
 
-      const measuredValue = this.getMeasuredValue(rule, index, repData, phaseData);
+      const measuredValue = this.getMeasuredValue(
+        rule,
+        index,
+        repData,
+        phaseData,
+      );
 
       // Skip if value couldn't be calculated
       if (Number.isNaN(measuredValue)) return;
 
-      // For symmetry rules, compare absolute difference
-      const valueToCompare = rule.template === "symmetry" ? Math.abs(measuredValue) : measuredValue;
-      const evalResult = this.evaluateComparator(this.getComparator(rule), valueToCompare, threshold);
+      const ruleType = rule.type;
+      let evalResult: { passed: boolean; direction?: "low" | "high" };
+
+      if (ruleType === "duration") {
+        const minSeconds = rule.minSeconds?.[this.currentView];
+        const maxSeconds = rule.maxSeconds?.[this.currentView];
+
+        if (minSeconds !== undefined && maxSeconds !== undefined) {
+          if (measuredValue < minSeconds) {
+            evalResult = { passed: false, direction: "low" };
+          } else if (measuredValue > maxSeconds) {
+            evalResult = { passed: false, direction: "high" };
+          } else {
+            evalResult = { passed: true };
+          }
+        } else if (minSeconds !== undefined) {
+          evalResult = this.evaluateComparator(
+            this.getComparator(rule),
+            measuredValue,
+            minSeconds,
+          );
+        } else if (maxSeconds !== undefined) {
+          evalResult = this.evaluateComparator(
+            this.getComparator(rule),
+            measuredValue,
+            maxSeconds,
+          );
+        } else {
+          return;
+        }
+      } else {
+        const valueToCompare =
+          ruleType === "symmetry" ? Math.abs(measuredValue) : measuredValue;
+        evalResult = this.evaluateComparator(
+          this.getComparator(rule),
+          valueToCompare,
+          threshold,
+        );
+      }
 
       feedbacks.push({
         ruleId,
-        errorType: rule.error_type,
+        errorType: rule.error_type as ErrorType,
         passed: evalResult.passed,
         value: measuredValue,
         threshold,
