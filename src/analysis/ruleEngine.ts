@@ -56,9 +56,7 @@ export class RuleEngine {
   }
 
   private getRuleId(rule: RuleConfig, index: number): string {
-    return (
-      rule.id ?? `${rule.error_type}_${rule.type}_${rule.evaluation}_${index}`
-    );
+    return rule.id ?? `${rule.error_type}_${rule.type}_${rule.evaluation}_${index}`;
   }
 
   private getComparator(rule: RuleConfig): ComparatorType {
@@ -87,9 +85,7 @@ export class RuleEngine {
   }
 
   private getInterval(rule: RuleConfig): "FRAME" | "PHASE" | "REP" {
-    return (
-      (rule.evaluation.toUpperCase() as "FRAME" | "PHASE" | "REP") || "REP"
-    );
+    return (rule.evaluation.toUpperCase() as "FRAME" | "PHASE" | "REP") || "REP";
   }
 
   private getPhases(rule: RuleConfig): string[] {
@@ -139,12 +135,15 @@ export class RuleEngine {
   ): { passed: boolean; direction?: "low" | "high" } {
     const comp = comparator.toUpperCase();
     switch (comp) {
+      case "MAX":
       case "ABOVE":
         // For "ABOVE" comparator, value should be >= threshold (e.g., depth check)
         return { passed: value >= threshold };
       case "MIN":
+        // For "MIN" comparator, min value should be >= threshold (minimum requirement)
+        return { passed: value >= threshold };
       case "BELOW":
-        // For "BELOW" comparator, value should be <= threshold (e.g., lockout, forward lean)
+        // For "BELOW" comparator, max value should be <= threshold (maximum limit)
         return { passed: value <= threshold };
       case "MEAN":
         // For "MEAN" comparator, allow some tolerance around the threshold
@@ -178,10 +177,7 @@ export class RuleEngine {
       this.passCounts[ruleId]++;
 
       // Clear active error after enough consecutive passes
-      if (
-        this.activeErrors[ruleId] &&
-        this.passCounts[ruleId] >= this.ERROR_CLEAR_FRAMES
-      ) {
+      if (this.activeErrors[ruleId] && this.passCounts[ruleId] >= this.ERROR_CLEAR_FRAMES) {
         this.activeErrors[ruleId] = false;
       }
     } else {
@@ -237,11 +233,7 @@ export class RuleEngine {
           const right = frameData[rule.feature_right!] ?? NaN;
           if (Number.isNaN(left) || Number.isNaN(right)) return;
           measuredValue = Math.abs(left - right);
-          evalResult = this.evaluateComparator(
-            comparator,
-            measuredValue,
-            threshold,
-          );
+          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
         } else if (template === "stability") {
           // Stability check: accumulate values and check std dev
           const feature = rule.feature;
@@ -255,11 +247,7 @@ export class RuleEngine {
           if (this.frameBuffer[ruleId].length < 10) return;
 
           measuredValue = this.calcStd(this.frameBuffer[ruleId]);
-          evalResult = this.evaluateComparator(
-            comparator,
-            measuredValue,
-            threshold,
-          );
+          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
         } else if (template === "duration") {
           const feature = rule.feature;
           if (!feature) return;
@@ -278,17 +266,9 @@ export class RuleEngine {
               evalResult = { passed: true };
             }
           } else if (minSeconds !== undefined) {
-            evalResult = this.evaluateComparator(
-              comparator,
-              measuredValue,
-              minSeconds,
-            );
+            evalResult = this.evaluateComparator(comparator, measuredValue, minSeconds);
           } else if (maxSeconds !== undefined) {
-            evalResult = this.evaluateComparator(
-              comparator,
-              measuredValue,
-              maxSeconds,
-            );
+            evalResult = this.evaluateComparator(comparator, measuredValue, maxSeconds);
           } else {
             return;
           }
@@ -299,21 +279,13 @@ export class RuleEngine {
           if (Number.isNaN(measuredValue)) return;
           const maxVelocity = rule.maxVelocity?.[this.currentView];
           if (maxVelocity === undefined) return;
-          evalResult = this.evaluateComparator(
-            comparator,
-            measuredValue,
-            maxVelocity,
-          );
+          evalResult = this.evaluateComparator(comparator, measuredValue, maxVelocity);
         } else {
           const feature = rule.feature;
           if (!feature) return;
           measuredValue = frameData[feature] ?? NaN;
           if (Number.isNaN(measuredValue)) return;
-          evalResult = this.evaluateComparator(
-            comparator,
-            measuredValue,
-            threshold,
-          );
+          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
         }
 
         // Apply debouncing
@@ -339,11 +311,8 @@ export class RuleEngine {
 
     const errors = feedbacks.filter((f) => !f.passed).map((f) => f.errorType);
     const totalWeight = feedbacks.reduce((s, f) => s + (f.weight ?? 1), 0);
-    const failedWeight = feedbacks
-      .filter((f) => !f.passed)
-      .reduce((s, f) => s + (f.weight ?? 1), 0);
-    const quality =
-      totalWeight > 0 ? Math.max(0, 1 - failedWeight / totalWeight) : 1;
+    const failedWeight = feedbacks.filter((f) => !f.passed).reduce((s, f) => s + (f.weight ?? 1), 0);
+    const quality = totalWeight > 0 ? Math.max(0, 1 - failedWeight / totalWeight) : 1;
 
     feedbacks.forEach((f) => {
       f.errors = errors;
@@ -366,9 +335,7 @@ export class RuleEngine {
     const interval = this.getInterval(rule);
 
     const dataSource =
-      interval === "PHASE" && phaseData
-        ? phaseData[this.getPhases(rule)[0] as keyof PhaseAggregates]
-        : repData;
+      interval === "PHASE" && phaseData ? phaseData[this.getPhases(rule)[0] as keyof PhaseAggregates] : repData;
 
     if (!dataSource) return NaN;
 
@@ -383,14 +350,11 @@ export class RuleEngine {
     const feature = rule.feature;
     if (!feature) return NaN;
 
-    if (comparator === "above")
-      return dataSource[`${feature}_max`] ?? dataSource[feature] ?? NaN;
-    if (comparator === "below")
-      return dataSource[`${feature}_min`] ?? dataSource[feature] ?? NaN;
-    if (comparator === "min")
-      return dataSource[`${feature}_min`] ?? dataSource[feature] ?? NaN;
-    if (comparator === "mean")
-      return dataSource[`${feature}_mean`] ?? dataSource[feature] ?? NaN;
+    if (comparator === "max") return dataSource[`${feature}_max`] ?? dataSource[feature] ?? NaN;
+    if (comparator === "above") return dataSource[`${feature}_max`] ?? dataSource[feature] ?? NaN;
+    if (comparator === "below") return dataSource[`${feature}_min`] ?? dataSource[feature] ?? NaN;
+    if (comparator === "min") return dataSource[`${feature}_min`] ?? dataSource[feature] ?? NaN;
+    if (comparator === "mean") return dataSource[`${feature}_mean`] ?? dataSource[feature] ?? NaN;
     if (comparator === "std") return dataSource[`${feature}_std`] ?? NaN;
 
     return dataSource[feature] ?? NaN;
@@ -399,10 +363,7 @@ export class RuleEngine {
   /**
    * Evaluate rules using both rep-level and phase-level aggregates.
    */
-  evaluateWithPhases(
-    repData: RepAggregates,
-    phaseData?: PhaseAggregates,
-  ): Feedback[] {
+  evaluateWithPhases(repData: RepAggregates, phaseData?: PhaseAggregates): Feedback[] {
     const feedbacks: Feedback[] = [];
 
     this.config.rules.forEach((rule, index) => {
@@ -415,9 +376,7 @@ export class RuleEngine {
       if (threshold === undefined) return;
       // Handle frame-level rules from accumulated data
       if (interval === "FRAME") {
-        const frameFeedback = this.frameFeedbacks.find(
-          (f) => f.ruleId === ruleId,
-        );
+        const frameFeedback = this.frameFeedbacks.find((f) => f.ruleId === ruleId);
         if (frameFeedback) feedbacks.push(frameFeedback);
         return;
       }
@@ -425,12 +384,7 @@ export class RuleEngine {
       // Skip phase-evaluation rules if no phase data provided
       if (interval === "PHASE" && !phaseData) return;
 
-      const measuredValue = this.getMeasuredValue(
-        rule,
-        index,
-        repData,
-        phaseData,
-      );
+      const measuredValue = this.getMeasuredValue(rule, index, repData, phaseData);
 
       // Skip if value couldn't be calculated
       if (Number.isNaN(measuredValue)) return;
@@ -451,28 +405,15 @@ export class RuleEngine {
             evalResult = { passed: true };
           }
         } else if (minSeconds !== undefined) {
-          evalResult = this.evaluateComparator(
-            this.getComparator(rule),
-            measuredValue,
-            minSeconds,
-          );
+          evalResult = this.evaluateComparator(this.getComparator(rule), measuredValue, minSeconds);
         } else if (maxSeconds !== undefined) {
-          evalResult = this.evaluateComparator(
-            this.getComparator(rule),
-            measuredValue,
-            maxSeconds,
-          );
+          evalResult = this.evaluateComparator(this.getComparator(rule), measuredValue, maxSeconds);
         } else {
           return;
         }
       } else {
-        const valueToCompare =
-          ruleType === "symmetry" ? Math.abs(measuredValue) : measuredValue;
-        evalResult = this.evaluateComparator(
-          this.getComparator(rule),
-          valueToCompare,
-          threshold,
-        );
+        const valueToCompare = ruleType === "symmetry" ? Math.abs(measuredValue) : measuredValue;
+        evalResult = this.evaluateComparator(this.getComparator(rule), valueToCompare, threshold);
       }
 
       feedbacks.push({

@@ -49,7 +49,7 @@ export class RepDetector {
       case "squat":
         return 5;
       case "bicep_curl":
-        return 5;
+        return 10;
       case "shoulder_press":
         return 6;
       case "bench_press":

@@ -1,5 +1,5 @@
 import { Keypoint, RepAggregates, PhaseAggregates, PhaseType, FrameData, ExerciseId } from "../types";
-import { calculateAngle, isValidKeypoint } from "../utils/geometry";
+import { calculateAngle } from "../utils/geometry";
 
 const EXERCISE_FEATURES: Record<ExerciseId, string[]> = {
   squat: [
@@ -27,23 +27,6 @@ const EXERCISE_FEATURES: Record<ExerciseId, string[]> = {
     "trunk_angle",
   ],
   lat_pulldown: ["wrist_to_shoulder_y_left", "wrist_to_shoulder_y_right", "torso_tilt"],
-};
-
-// Map each feature to the keypoints required to compute it.
-const FEATURE_KEYPOINTS: Record<string, string[]> = {
-  knee_flexion_left: ["left_hip", "left_knee", "left_ankle"],
-  knee_flexion_right: ["right_hip", "right_knee", "right_ankle"],
-  elbow_flexion_left: ["left_shoulder", "left_elbow", "left_wrist"],
-  elbow_flexion_right: ["right_shoulder", "right_elbow", "right_wrist"],
-  trunk_angle: ["left_hip", "left_shoulder", "right_hip", "right_shoulder"],
-  knee_joint_center_x_offset: ["left_knee", "right_knee"],
-  stance_width_normalized: ["left_ankle", "right_ankle", "left_hip", "right_hip"],
-  stance_width: ["left_ankle", "right_ankle"],
-  hip_flexion_symmetry: ["left_hip", "right_hip"],
-  elbow_to_shoulder_y_left: ["left_elbow", "left_shoulder"],
-  torso_tilt: ["left_shoulder", "right_shoulder", "left_hip", "right_hip"],
-  wrist_to_shoulder_y_left: ["left_wrist", "left_shoulder"],
-  wrist_to_shoulder_y_right: ["right_wrist", "right_shoulder"],
 };
 
 export class FeatureAggregator {
@@ -191,44 +174,6 @@ export class FeatureAggregator {
     const re = keypoints.get("right_elbow");
     const lw = keypoints.get("left_wrist");
     const rw = keypoints.get("right_wrist");
-    // Determine if all keypoints required for this exercise are present.
-    const supportedFeatures = EXERCISE_FEATURES[exerciseId] || [];
-    const requiredKeypointNames = new Set<string>();
-    for (const f of supportedFeatures) {
-      const req = FEATURE_KEYPOINTS[f];
-      if (req) req.forEach((n) => requiredKeypointNames.add(n));
-    }
-
-    let allPresent = true;
-    for (const name of requiredKeypointNames) {
-      const kp = keypoints.get(name);
-      if (!isValidKeypoint(kp)) {
-        allPresent = false;
-        break;
-      }
-    }
-
-    if (!allPresent) {
-      // If any required keypoint is missing, return NaN frame data and do not record features.
-      const nanFrame: FrameData = {
-        knee_flexion: NaN,
-        knee_flexion_left: NaN,
-        knee_flexion_right: NaN,
-        elbow_flexion_left: NaN,
-        elbow_flexion_right: NaN,
-        knee_joint_center_x_offset: NaN,
-        stance_width_normalized: NaN,
-        stance_width: NaN,
-        trunk_angle: NaN,
-        hip_flexion_symmetry: NaN,
-        elbow_to_shoulder_y_left: NaN,
-        torso_tilt: NaN,
-        wrist_to_shoulder_y_left: NaN,
-        wrist_to_shoulder_y_right: NaN,
-      };
-
-      return nanFrame;
-    }
 
     const kneeFlexionLeft = calculateAngle(lh, lk, la);
     const kneeFlexionRight = calculateAngle(rh, rk, ra);
@@ -271,7 +216,8 @@ export class FeatureAggregator {
       wrist_to_shoulder_y_right: wristToShoulderYRight,
     };
 
-    if (supportedFeatures.length > 0) {
+    const supportedFeatures = EXERCISE_FEATURES[exerciseId];
+    if (supportedFeatures) {
       for (const feature of supportedFeatures) {
         const value = frameData[feature];
         if (value !== undefined) {

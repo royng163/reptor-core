@@ -170,7 +170,7 @@ var RepDetector = class {
       case "squat":
         return 5;
       case "bicep_curl":
-        return 5;
+        return 10;
       case "shoulder_press":
         return 6;
       case "bench_press":
@@ -319,21 +319,6 @@ var EXERCISE_FEATURES = {
   ],
   lat_pulldown: ["wrist_to_shoulder_y_left", "wrist_to_shoulder_y_right", "torso_tilt"]
 };
-var FEATURE_KEYPOINTS = {
-  knee_flexion_left: ["left_hip", "left_knee", "left_ankle"],
-  knee_flexion_right: ["right_hip", "right_knee", "right_ankle"],
-  elbow_flexion_left: ["left_shoulder", "left_elbow", "left_wrist"],
-  elbow_flexion_right: ["right_shoulder", "right_elbow", "right_wrist"],
-  trunk_angle: ["left_hip", "left_shoulder", "right_hip", "right_shoulder"],
-  knee_joint_center_x_offset: ["left_knee", "right_knee"],
-  stance_width_normalized: ["left_ankle", "right_ankle", "left_hip", "right_hip"],
-  stance_width: ["left_ankle", "right_ankle"],
-  hip_flexion_symmetry: ["left_hip", "right_hip"],
-  elbow_to_shoulder_y_left: ["left_elbow", "left_shoulder"],
-  torso_tilt: ["left_shoulder", "right_shoulder", "left_hip", "right_hip"],
-  wrist_to_shoulder_y_left: ["left_wrist", "left_shoulder"],
-  wrist_to_shoulder_y_right: ["right_wrist", "right_shoulder"]
-};
 var FeatureAggregator = class {
   constructor() {
     this.currentPhase = "IDLE";
@@ -457,39 +442,6 @@ var FeatureAggregator = class {
     const re = keypoints.get("right_elbow");
     const lw = keypoints.get("left_wrist");
     const rw = keypoints.get("right_wrist");
-    const supportedFeatures = EXERCISE_FEATURES[exerciseId] || [];
-    const requiredKeypointNames = /* @__PURE__ */ new Set();
-    for (const f of supportedFeatures) {
-      const req = FEATURE_KEYPOINTS[f];
-      if (req) req.forEach((n) => requiredKeypointNames.add(n));
-    }
-    let allPresent = true;
-    for (const name of requiredKeypointNames) {
-      const kp = keypoints.get(name);
-      if (!isValidKeypoint(kp)) {
-        allPresent = false;
-        break;
-      }
-    }
-    if (!allPresent) {
-      const nanFrame = {
-        knee_flexion: NaN,
-        knee_flexion_left: NaN,
-        knee_flexion_right: NaN,
-        elbow_flexion_left: NaN,
-        elbow_flexion_right: NaN,
-        knee_joint_center_x_offset: NaN,
-        stance_width_normalized: NaN,
-        stance_width: NaN,
-        trunk_angle: NaN,
-        hip_flexion_symmetry: NaN,
-        elbow_to_shoulder_y_left: NaN,
-        torso_tilt: NaN,
-        wrist_to_shoulder_y_left: NaN,
-        wrist_to_shoulder_y_right: NaN
-      };
-      return nanFrame;
-    }
     const kneeFlexionLeft = calculateAngle(lh, lk, la);
     const kneeFlexionRight = calculateAngle(rh, rk, ra);
     const kneeFlexion = (kneeFlexionLeft + kneeFlexionRight) / 2;
@@ -525,7 +477,8 @@ var FeatureAggregator = class {
       wrist_to_shoulder_y_left: wristToShoulderYLeft,
       wrist_to_shoulder_y_right: wristToShoulderYRight
     };
-    if (supportedFeatures.length > 0) {
+    const supportedFeatures = EXERCISE_FEATURES[exerciseId];
+    if (supportedFeatures) {
       for (const feature of supportedFeatures) {
         const value = frameData[feature];
         if (value !== void 0) {
@@ -625,9 +578,11 @@ var RuleEngine = class {
   evaluateComparator(comparator, value, threshold) {
     const comp = comparator.toUpperCase();
     switch (comp) {
+      case "MAX":
       case "ABOVE":
         return { passed: value >= threshold };
       case "MIN":
+        return { passed: value >= threshold };
       case "BELOW":
         return { passed: value <= threshold };
       case "MEAN":
@@ -694,11 +649,7 @@ var RuleEngine = class {
           const right = (_b = frameData[rule.feature_right]) != null ? _b : NaN;
           if (Number.isNaN(left) || Number.isNaN(right)) return;
           measuredValue = Math.abs(left - right);
-          evalResult = this.evaluateComparator(
-            comparator,
-            measuredValue,
-            threshold
-          );
+          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
         } else if (template === "stability") {
           const feature = rule.feature;
           if (!feature) return;
@@ -708,11 +659,7 @@ var RuleEngine = class {
           this.frameBuffer[ruleId].push(value);
           if (this.frameBuffer[ruleId].length < 10) return;
           measuredValue = this.calcStd(this.frameBuffer[ruleId]);
-          evalResult = this.evaluateComparator(
-            comparator,
-            measuredValue,
-            threshold
-          );
+          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
         } else if (template === "duration") {
           const feature = rule.feature;
           if (!feature) return;
@@ -729,17 +676,9 @@ var RuleEngine = class {
               evalResult = { passed: true };
             }
           } else if (minSeconds !== void 0) {
-            evalResult = this.evaluateComparator(
-              comparator,
-              measuredValue,
-              minSeconds
-            );
+            evalResult = this.evaluateComparator(comparator, measuredValue, minSeconds);
           } else if (maxSeconds !== void 0) {
-            evalResult = this.evaluateComparator(
-              comparator,
-              measuredValue,
-              maxSeconds
-            );
+            evalResult = this.evaluateComparator(comparator, measuredValue, maxSeconds);
           } else {
             return;
           }
@@ -750,21 +689,13 @@ var RuleEngine = class {
           if (Number.isNaN(measuredValue)) return;
           const maxVelocity = (_h = rule.maxVelocity) == null ? void 0 : _h[this.currentView];
           if (maxVelocity === void 0) return;
-          evalResult = this.evaluateComparator(
-            comparator,
-            measuredValue,
-            maxVelocity
-          );
+          evalResult = this.evaluateComparator(comparator, measuredValue, maxVelocity);
         } else {
           const feature = rule.feature;
           if (!feature) return;
           measuredValue = (_i = frameData[feature]) != null ? _i : NaN;
           if (Number.isNaN(measuredValue)) return;
-          evalResult = this.evaluateComparator(
-            comparator,
-            measuredValue,
-            threshold
-          );
+          evalResult = this.evaluateComparator(comparator, measuredValue, threshold);
         }
         const debouncedPassed = this.updateDebounce(rule.id, evalResult.passed);
         feedbacks.push({
@@ -802,7 +733,7 @@ var RuleEngine = class {
    * Gets the measured value for a rule from the appropriate data source.
    */
   getMeasuredValue(rule, index, repData, phaseData) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p;
     const comparator = this.getComparator(rule);
     const interval = this.getInterval(rule);
     const dataSource = interval === "PHASE" && phaseData ? phaseData[this.getPhases(rule)[0]] : repData;
@@ -815,16 +746,13 @@ var RuleEngine = class {
     }
     const feature = rule.feature;
     if (!feature) return NaN;
-    if (comparator === "above")
-      return (_f = (_e = dataSource[`${feature}_max`]) != null ? _e : dataSource[feature]) != null ? _f : NaN;
-    if (comparator === "below")
-      return (_h = (_g = dataSource[`${feature}_min`]) != null ? _g : dataSource[feature]) != null ? _h : NaN;
-    if (comparator === "min")
-      return (_j = (_i = dataSource[`${feature}_min`]) != null ? _i : dataSource[feature]) != null ? _j : NaN;
-    if (comparator === "mean")
-      return (_l = (_k = dataSource[`${feature}_mean`]) != null ? _k : dataSource[feature]) != null ? _l : NaN;
-    if (comparator === "std") return (_m = dataSource[`${feature}_std`]) != null ? _m : NaN;
-    return (_n = dataSource[feature]) != null ? _n : NaN;
+    if (comparator === "max") return (_f = (_e = dataSource[`${feature}_max`]) != null ? _e : dataSource[feature]) != null ? _f : NaN;
+    if (comparator === "above") return (_h = (_g = dataSource[`${feature}_max`]) != null ? _g : dataSource[feature]) != null ? _h : NaN;
+    if (comparator === "below") return (_j = (_i = dataSource[`${feature}_min`]) != null ? _i : dataSource[feature]) != null ? _j : NaN;
+    if (comparator === "min") return (_l = (_k = dataSource[`${feature}_min`]) != null ? _k : dataSource[feature]) != null ? _l : NaN;
+    if (comparator === "mean") return (_n = (_m = dataSource[`${feature}_mean`]) != null ? _m : dataSource[feature]) != null ? _n : NaN;
+    if (comparator === "std") return (_o = dataSource[`${feature}_std`]) != null ? _o : NaN;
+    return (_p = dataSource[feature]) != null ? _p : NaN;
   }
   /**
    * Evaluate rules using both rep-level and phase-level aggregates.
@@ -838,19 +766,12 @@ var RuleEngine = class {
       const threshold = this.getThreshold(rule);
       if (threshold === void 0) return;
       if (interval === "FRAME") {
-        const frameFeedback = this.frameFeedbacks.find(
-          (f) => f.ruleId === ruleId
-        );
+        const frameFeedback = this.frameFeedbacks.find((f) => f.ruleId === ruleId);
         if (frameFeedback) feedbacks.push(frameFeedback);
         return;
       }
       if (interval === "PHASE" && !phaseData) return;
-      const measuredValue = this.getMeasuredValue(
-        rule,
-        index,
-        repData,
-        phaseData
-      );
+      const measuredValue = this.getMeasuredValue(rule, index, repData, phaseData);
       if (Number.isNaN(measuredValue)) return;
       const ruleType = rule.type;
       let evalResult;
@@ -866,27 +787,15 @@ var RuleEngine = class {
             evalResult = { passed: true };
           }
         } else if (minSeconds !== void 0) {
-          evalResult = this.evaluateComparator(
-            this.getComparator(rule),
-            measuredValue,
-            minSeconds
-          );
+          evalResult = this.evaluateComparator(this.getComparator(rule), measuredValue, minSeconds);
         } else if (maxSeconds !== void 0) {
-          evalResult = this.evaluateComparator(
-            this.getComparator(rule),
-            measuredValue,
-            maxSeconds
-          );
+          evalResult = this.evaluateComparator(this.getComparator(rule), measuredValue, maxSeconds);
         } else {
           return;
         }
       } else {
         const valueToCompare = ruleType === "symmetry" ? Math.abs(measuredValue) : measuredValue;
-        evalResult = this.evaluateComparator(
-          this.getComparator(rule),
-          valueToCompare,
-          threshold
-        );
+        evalResult = this.evaluateComparator(this.getComparator(rule), valueToCompare, threshold);
       }
       feedbacks.push({
         ruleId,

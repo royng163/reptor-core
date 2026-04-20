@@ -31,7 +31,7 @@ export type ErrorType =
 
 export type RuleType = "range" | "alignment" | "symmetry" | "stability" | "tempo" | "duration";
 export type ViewType = "front" | "side" | "incline";
-export type ComparatorType = "above" | "below" | "mean" | "std" | "sum" | "min";
+export type ComparatorType = "above" | "below" | "mean" | "std" | "sum" | "min" | "max";
 export type PhaseType = "CONCENTRIC" | "ECCENTRIC" | "IDLE";
 export type IntervalType = "FRAME" | "PHASE" | "REP";
 

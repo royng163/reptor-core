@@ -20,7 +20,7 @@ interface FrameKeypoints {
 type ErrorType = "INSUFFICIENT_RANGE" | "BAD_ALIGNMENT" | "BAD_SETUP" | "ASYMMETRY" | "INSTABILITY" | "MOMENTUM_CHEAT" | "BAD_TEMPO";
 type RuleType = "range" | "alignment" | "symmetry" | "stability" | "tempo" | "duration";
 type ViewType = "front" | "side" | "incline";
-type ComparatorType = "above" | "below" | "mean" | "std" | "sum" | "min";
+type ComparatorType = "above" | "below" | "mean" | "std" | "sum" | "min" | "max";
 type PhaseType = "CONCENTRIC" | "ECCENTRIC" | "IDLE";
 type IntervalType = "FRAME" | "PHASE" | "REP";
 interface ViewThresholds {
