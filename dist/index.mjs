@@ -170,7 +170,7 @@ var RepDetector = class {
       case "squat":
         return 5;
       case "bicep_curl":
-        return 10;
+        return 20;
       case "shoulder_press":
         return 6;
       case "bench_press":
@@ -266,9 +266,6 @@ var RepDetector = class {
             this.pendingStart = null;
             this.startValue = null;
           }
-        } else if (velocity > threshold) {
-          this.state = "CONCENTRIC";
-          this.startValue = this.valueHistory[this.valueHistory.length - 3];
         }
         break;
     }

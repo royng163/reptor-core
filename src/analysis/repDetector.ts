@@ -49,7 +49,7 @@ export class RepDetector {
       case "squat":
         return 5;
       case "bicep_curl":
-        return 10;
+        return 20;
       case "shoulder_press":
         return 6;
       case "bench_press":
@@ -176,10 +176,6 @@ export class RepDetector {
             this.pendingStart = null;
             this.startValue = null;
           }
-        } else if (velocity > threshold) {
-          // Started going back down - restart concentric
-          this.state = "CONCENTRIC";
-          this.startValue = this.valueHistory[this.valueHistory.length - 3];
         }
         break;
     }
